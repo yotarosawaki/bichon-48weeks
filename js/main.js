@@ -305,7 +305,7 @@
 
   // ---------- 週の進行 ----------
   var ACTION_ANIM = { walk: ['walk', 'park'], brush: ['brush', 'room'], play: ['play', 'room'], shampoo: ['shampoo', 'bath'], salon: ['none', 'cg:salon'], job: ['job', 'desk'], bigjob: ['job', 'desk'] };
-  var EVENT_ANIM = { blitz: ['blitz', 'room'], wet: ['wet', 'bath'], side: ['side', 'park'], sleep: ['sleep', 'room'], front: ['front', 'room'], happy: ['happy', 'room'], sick: ['sick', 'room'] };
+  var EVENT_ANIM = { blitz: ['blitz', 'room'], wet: ['wet', 'room'], side: ['side', 'park'], sleep: ['sleep', 'room'], front: ['front', 'room'], happy: ['happy', 'room'], sick: ['sick', 'room'] };
   // イベントごとの専用の絵（1枚絵・専用ポーズ）
   var EVENT_SCENE = { hesoten: ['hesoten', 'room'], poodle: ['none', 'cg:poodle'], towel: ['none', 'cg:towel'], macho: ['none', 'cg:macho'],
     stalker: ['stalker', 'room'], tears: ['tears', 'room'], matting: ['matting', 'room'], sick: ['none', 'cg:vet'], heat: ['heat', 'room'], summer: ['side', 'park'] };

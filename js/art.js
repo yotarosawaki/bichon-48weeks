@@ -6,7 +6,7 @@
   var W = 256, H = 160, PX = 2;          // 論理座標と、論理1pxあたりの実ピクセル
   var DOG_SCALE = 3;                      // 犬スプライト1ドット = 実3px
   // スプライトごとの大きさの補正（描かれたドットの細かさが違うもの）
-  var SCALE = { wet1: 2, wet2: 2, cheer: 2, jump: 2, owner: 2, owner_pc1: 3, owner_pc2: 3 };
+  var SCALE = { wet1: 1.5, wet2: 1.5, cheer: 2, jump: 2, owner: 2, owner_pc1: 3, owner_pc2: 3 };
 
   var raw = {};       // スプライト名 -> Image
   var pics = {};      // 背景・イベント絵 -> Image
