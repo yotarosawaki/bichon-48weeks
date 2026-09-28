@@ -64,6 +64,23 @@
   // ブラウザは画面に触れるまで音を出せないので、最初の操作でBGMを始める
   document.addEventListener('pointerdown', function first() { document.removeEventListener('pointerdown', first); BGM.setEnabled(soundOn); });
 
+  // ---------- 場面ごとのBGM ----------
+  // 絵の場面が切り替わるたびに、その場面の曲にする。ふだんの部屋は季節の曲
+  function musicFor(name, scene) {
+    if (scene === 'cg:title') return 'title';
+    if (scene === 'cg:bankrupt' || scene === 'cg:kyokai') return 'sad';
+    if (scene === 'stage' || scene === 'cg:contest') return 'contest';
+    if (name === 'blitz') return 'blitz';
+    if (scene === 'kyokai' || scene === 'cg:vet' || name === 'sick' || name === 'heat') return 'trouble';
+    if (scene === 'park' || scene === 'cg:poodle' || name === 'walk') return 'walk';
+    return S ? L.season(Math.min(S.week, L.TOTAL_WEEKS)) : 'spring';
+  }
+  var setAnimOrig = A.setAnim;
+  A.setAnim = function (name, scene, opts) {
+    setAnimOrig(name, scene, opts);
+    BGM.play(musicFor(name, A.anim.scene));
+  };
+
   // ---------- 描画ループ ----------
   var last = performance.now();
   function frame(now) {
@@ -420,7 +437,6 @@
 
   // ---------- 終わり ----------
   async function gameOver(type) {
-    BGM.play('sad');
     store(SAVE_KEY, null);
     $('btnSave').hidden = true;
     $('carePanel').hidden = true;
@@ -587,7 +603,6 @@
     $('hud').hidden = true; $('carePanel').hidden = true; $('btnSave').hidden = true; $('btnTitle').hidden = true;
     $('dialog').hidden = true; advance = null;
     A.setAnim('none', 'cg:title');
-    BGM.play('home');
     var sv = anySave();
     var sh = showSheet(
       '<h2>ビションフリーゼと、48週間。</h2>' +
