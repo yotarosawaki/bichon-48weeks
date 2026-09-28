@@ -301,7 +301,7 @@
         if (sea === 'summer') { g.globalAlpha = 0.15; rect(g, '#ffb347', 0, 0, W, H); g.globalAlpha = 1; }
         break;
       case 'brush':
-        drawDog(g, f2 ? 'brush1' : 'brush2', 128, FLOOR, look);
+        drawDog(g, ['brush1', 'brush2', 'brush3', 'brush2'][Math.floor(at * 6) % 4], 128, FLOOR, look);
         if (f2) spark(g, 160, 80); else spark(g, 94, 88, '#ffffff');
         break;
       case 'play':
