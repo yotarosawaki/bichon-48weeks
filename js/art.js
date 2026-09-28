@@ -282,7 +282,7 @@
         if (Math.abs(anim.tx - anim.x) > 1) {
           var dir = anim.tx > anim.x ? 1 : -1;
           anim.x += dir * 30 * dt;
-          drawDog(g, Math.floor(at * 8) % 2 ? 'run1' : 'run2', anim.x, FLOOR, look, { flipX: dir < 0 });
+          drawDog(g, 'run' + (Math.floor(at * 8) % 4 + 1), anim.x, FLOOR, look, { flipX: dir < 0 });
         } else {
           var pose = anim.pose === 'front1' && (at % 3) < 0.25 ? 'blink' : anim.pose;
           drawDog(g, pose, anim.x, FLOOR, look, { flipX: anim.flip });
@@ -307,7 +307,7 @@
       case 'play':
         var bx = 128 + Math.sin(at * 3) * 60, by = 110 - Math.abs(Math.sin(at * 6)) * 30;
         ellipse(g, '#d9606f', Math.round(bx + 36), Math.round(by), 5, 5); ellipse(g, '#f2949f', Math.round(bx + 35), Math.round(by - 1), 3, 3);
-        drawDog(g, Math.floor(at * 8) % 2 ? 'run1' : 'run2', bx, FLOOR, look, { flipX: Math.cos(at * 3) < 0 });
+        drawDog(g, 'run' + (Math.floor(at * 8) % 4 + 1), bx, FLOOR, look, { flipX: Math.cos(at * 3) < 0 });
         if (f2) heart(g, Math.round(bx) - 10, 70);
         break;
       case 'shampoo':
@@ -329,7 +329,7 @@
       case 'blitz':
         var period = 1.1, ph = (at % period) / period, goingR = Math.floor(at / period) % 2 === 0;
         var bxp = goingR ? 30 + ph * 196 : 226 - ph * 196;
-        drawDog(g, Math.floor(at * 14) % 2 ? 'run1' : 'run2', bxp, FLOOR - Math.abs(Math.sin(at * 16)) * 4, look, { flipX: !goingR });
+        drawDog(g, 'run' + (Math.floor(at * 14) % 4 + 1), bxp, FLOOR - Math.abs(Math.sin(at * 16)) * 4, look, { flipX: !goingR });
         for (i = 0; i < 4; i++) rect(g, '#ffffff', bxp + (goingR ? -44 - i * 6 : 30 + i * 6), 112 + i * 7, 14, 2);
         for (i = 0; i < 3; i++) ellipse(g, '#e6d3b3', bxp + (goingR ? -24 - i * 9 : 24 + i * 9), FLOOR - 2 - i, 3 + i, 2);
         break;
