@@ -304,8 +304,11 @@
   $('btnTitle').addEventListener('click', function () { if (!busy) { save(); titleScreen(); } });
 
   // ---------- 週の進行 ----------
-  var ACTION_ANIM = { walk: ['walk', 'park'], brush: ['brush', 'room'], play: ['play', 'room'], shampoo: ['shampoo', 'bath'], salon: ['salon', 'salon'], job: ['job', 'desk'], bigjob: ['job', 'desk'] };
-  var EVENT_ANIM = { blitz: ['blitz', 'room'], wet: ['wet', 'bath'], side: ['side', 'park'], sleep: ['sleep', 'room'], front: ['front', 'room'], happy: ['happy', 'room'], sick: ['sick', 'vet'] };
+  var ACTION_ANIM = { walk: ['walk', 'park'], brush: ['brush', 'room'], play: ['play', 'room'], shampoo: ['shampoo', 'bath'], salon: ['none', 'cg:salon'], job: ['job', 'desk'], bigjob: ['job', 'desk'] };
+  var EVENT_ANIM = { blitz: ['blitz', 'room'], wet: ['wet', 'bath'], side: ['side', 'park'], sleep: ['sleep', 'room'], front: ['front', 'room'], happy: ['happy', 'room'], sick: ['sick', 'room'] };
+  // イベントごとの専用の絵（1枚絵・専用ポーズ）
+  var EVENT_SCENE = { hesoten: ['hesoten', 'room'], poodle: ['none', 'cg:poodle'], towel: ['none', 'cg:towel'], macho: ['none', 'cg:macho'],
+    stalker: ['stalker', 'room'], tears: ['tears', 'room'], matting: ['matting', 'room'], sick: ['none', 'cg:vet'], heat: ['heat', 'room'], summer: ['side', 'park'] };
 
   $('btnGo').addEventListener('click', function () { if (!busy && plan.length === L.slotsFor(S)) runWeek(); });
 
@@ -372,7 +375,7 @@
   async function runEvent(id) {
     var e = L.EVENTS[id];
     if (!e) return;
-    var an = id === 'hesoten' ? ['hesoten', 'room'] : EVENT_ANIM[e.anim] || ['front', 'room'];
+    var an = EVENT_SCENE[id] || EVENT_ANIM[e.anim] || ['front', 'room'];
     A.setAnim(an[0], an[1]);
     if (id === 'blitz' || id === 'sick') sfx('bad');
     var idx = e.choices.length > 1 ? await choose(e.title, e.text, e.choices.map(function (c) { return c.label; }))
@@ -390,10 +393,10 @@
     $('btnSave').hidden = true;
     $('carePanel').hidden = true;
     if (type === 'bankrupt') {
-      A.setAnim('front', 'night'); sfx('bad');
+      A.setAnim('none', 'cg:bankrupt'); sfx('bad');
       await say('サイフがからっぽ…。ごはんもサロン代も払えなくなってしまった。', '破産');
     }
-    A.setAnim('leave', 'kyokai'); sfx('bad');
+    A.setAnim('none', 'cg:kyokai'); sfx('bad');
     await say('ビションフリーゼ協会の人がやってきた。\n「' + S.dogName + 'ちゃんは、しばらく協会で保護します」', 'ゲームオーバー');
     var reason = type === 'bankrupt' ? 'お金が足りなくなりました。副業とお世話のバランスが大事です。'
       : 'お世話が足りず、警告が3つたまりました。かわいさ' + L.WARN_CUTE + '未満・健康' + L.WARN_HEALTH + '未満で警告されます。';
@@ -415,7 +418,7 @@
     await say('ついにコンテスト当日！\n' + S.dogName + ' はステージに上がった。', 'ビションフリーゼ・コンテスト');
     var sc = L.contestScore(S);
     S.over = { type: 'clear', score: sc.total };
-    A.setAnim(sc.rank.place <= 3 ? 'cheer' : 'happy', 'stage');
+    if (sc.rank.place === 1) A.setAnim('none', 'cg:contest'); else A.setAnim(sc.rank.place <= 3 ? 'cheer' : 'happy', 'stage');
     sfx('fan');
     await say('結果は… ' + sc.total + '点で「' + sc.rank.label + '」！', '審査結果');
     resultSheet(sc);
@@ -528,7 +531,7 @@
     S = null; plan = []; prevStats = null;
     $('hud').hidden = true; $('carePanel').hidden = true; $('btnSave').hidden = true; $('btnTitle').hidden = true;
     $('dialog').hidden = true; advance = null;
-    A.setAnim('title', 'title');
+    A.setAnim('none', 'cg:title');
     var sv = loadSave();
     var sh = showSheet(
       '<h2>ビションフリーゼと、48週間。</h2>' +

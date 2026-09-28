@@ -96,8 +96,9 @@
   .warns i.on { background: var(--bad); }
 
   /* 会話ウィンドウ */
+  .screen { position: relative; }
   .dialog {
-    position: absolute; left: 8px; right: 8px; bottom: 8px; background: rgba(36,34,58,.94); color: #fff;
+    position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 5; background: #24223a; color: #fff;
     border: 3px solid #fff; outline: 3px solid var(--line); padding: 10px 14px; min-height: 72px; cursor: pointer;
     font-size: 16px; line-height: 1.55;
   }
@@ -111,7 +112,11 @@
   .choice.confirm { background: var(--pink); border-color: #fff; text-align: center; margin-top: 4px; }
   .choice.confirm:hover, .choice.confirm:focus-visible { background: #f4a3ad; color: #fff; }
   @keyframes bob { 50% { transform: translateY(3px); } }
-  @media (max-width: 520px) { .dialog { font-size: 14px; min-height: 60px; } .dialog h3 { font-size: 14px; } }
+  /* スマホでは絵に重ねず、絵のすぐ下に出す（犬とステータスが隠れないように） */
+  @media (max-width: 520px) {
+    .dialog { position: relative; left: auto; right: auto; bottom: auto; margin: 6px; font-size: 14px; min-height: 60px; padding-bottom: 18px; }
+    .dialog h3 { font-size: 14px; }
+  }
 
   /* パラメータ */
   .panel { padding: 12px 14px; display: grid; gap: 12px; }
@@ -149,7 +154,7 @@
   .act .d { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
   .act:last-child:nth-child(3n+1) { grid-column: 1 / -1; }
   .act[disabled] { opacity: .4; cursor: not-allowed; transform: none; box-shadow: 0 3px 0 var(--line); }
-  .ico { width: 16px; height: 16px; image-rendering: pixelated; flex: none; }
+  .ico { width: 22px; height: 22px; object-fit: contain; image-rendering: pixelated; flex: none; }
   .go { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
   .note { font-size: 13px; color: var(--ink-soft); margin: 0; }
 
@@ -193,12 +198,14 @@
 
   <div class="game">
     <section class="stage px" aria-label="ゲーム画面">
-      <canvas id="scene" width="256" height="160"></canvas>
-      <div class="dialog" id="dialog" hidden role="dialog" aria-live="polite">
-        <h3 id="dlgTitle" hidden></h3>
-        <p id="dlgText"></p>
-        <div class="choices" id="dlgChoices"></div>
-        <span class="next" id="dlgNext" aria-hidden="true">▼</span>
+      <div class="screen">
+        <canvas id="scene" width="512" height="320"></canvas>
+        <div class="dialog" id="dialog" hidden role="dialog" aria-live="polite">
+          <h3 id="dlgTitle" hidden></h3>
+          <p id="dlgText"></p>
+          <div class="choices" id="dlgChoices"></div>
+          <span class="next" id="dlgNext" aria-hidden="true">▼</span>
+        </div>
       </div>
       <div class="hud" id="hud" hidden>
         <span class="week" id="hudWeek"></span>
@@ -233,11 +240,11 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="js/sprites.js?v=4"></script>
-<script src="js/logic.js?v=4"></script>
-<script src="js/art.js?v=4"></script>
-<script src="js/ranking-config.js?v=4"></script>
-<script src="js/ranking-firebase.js?v=4"></script>
-<script src="js/main.js?v=4"></script>
+<script src="js/sprites.js?v=5"></script>
+<script src="js/logic.js?v=5"></script>
+<script src="js/art.js?v=5"></script>
+<script src="js/ranking-config.js?v=5"></script>
+<script src="js/ranking-firebase.js?v=5"></script>
+<script src="js/main.js?v=5"></script>
 
 </html>

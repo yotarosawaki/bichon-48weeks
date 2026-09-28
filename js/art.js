@@ -1,26 +1,41 @@
 // ドット絵の描画：犬スプライトの加工、背景、アニメーション
+// 画面は 512x320（内部）。手描きの小物（ハート・泡など）は 256x160 の座標で描いて2倍にする。
 (function () {
   'use strict';
 
-  var W = 256, H = 160, SCALE = 2;
-  var OUT = [24, 22, 44], WHITE = [255, 255, 255], LIGHT = [206, 214, 232], MID = [150, 162, 196], DARK = [70, 80, 130];
-  var CREAM = [240, 230, 206], BROWN = [176, 124, 92];
+  var W = 256, H = 160, PX = 2;          // 論理座標と、論理1pxあたりの実ピクセル
+  var DOG_SCALE = 3;                      // 犬スプライト1ドット = 実3px
+  // スプライトごとの大きさの補正（描かれたドットの細かさが違うもの）
+  var SCALE = { wet1: 2, wet2: 2, cheer: 2, jump: 2, owner: 2, owner_pc1: 3, owner_pc2: 3 };
 
-  var raw = {};       // name -> HTMLImageElement
-  var cache = {};     // 加工済みスプライト
+  var raw = {};       // スプライト名 -> Image
+  var pics = {};      // 背景・イベント絵 -> Image
+  var cache = {};
   var ready;
 
+  var PICS = ['bg_room', 'bg_night', 'bg_park', 'ev_title', 'ev_salon', 'ev_towel', 'ev_poodle', 'ev_macho', 'ev_kyokai', 'ev_bankrupt', 'ev_contest', 'ev_vet'];
+
+  function loadImg(src) {
+    return new Promise(function (res) {
+      var im = new Image();
+      im.onload = function () { res(im); };
+      im.onerror = function () { res(null); };
+      im.src = src;
+    });
+  }
   function load() {
     if (ready) return ready;
-    var names = Object.keys(window.SPRITES);
-    ready = Promise.all(names.map(function (n) {
-      return new Promise(function (res) {
-        var im = new Image();
-        im.onload = function () { raw[n] = im; res(); };
-        im.onerror = function () { res(); };
-        im.src = window.SPRITES[n];
-      });
-    }));
+    var ver = (document.querySelector('script[src*="art.js"]') || {}).src || '';
+    var q = ver.indexOf('?') >= 0 ? ver.slice(ver.indexOf('?')) : '';
+    var jobs = Object.keys(window.SPRITES).map(function (n) {
+      return loadImg(window.SPRITES[n]).then(function (im) { if (im) raw[n] = im; });
+    });
+    // 背景は最初の画面に要るものだけ待つ。残りは後から読み込まれる
+    PICS.forEach(function (n) {
+      var p = loadImg('img/' + n + '.jpg' + q).then(function (im) { if (im) pics[n] = im; });
+      if (n === 'ev_title' || n === 'bg_room') jobs.push(p);
+    });
+    ready = Promise.all(jobs);
     return ready;
   }
 
@@ -40,96 +55,115 @@
     };
   }
 
-  // 元スプライトに「毛の伸び」「毛玉」「汚れ」を足した絵を作る
+  // モコモコの段階で、手描きの差分があるポーズは差し替える
+  var MOKO_SWAP = { front1: 'm_front', blink: 'm_blink', doze: 'm_blink', side1: 'm_side', side2: 'm_side', sit1: 'm_sit', sit2: 'm_sit', sit3: 'm_sit', sit4: 'm_sit' };
+  function resolve(name, look) {
+    if (!look) return { name: name, fluff: 0 };
+    if (look.moko >= 2 && MOKO_SWAP[name]) return { name: MOKO_SWAP[name], fluff: look.moko - 2 };
+    if (look.dirt >= 1 && look.moko < 2 && (name === 'front1' || name === 'sit1')) return { name: 'tears', fluff: look.moko };
+    return { name: name, fluff: look.moko, cream: look.moko >= 2 };
+  }
+
+  var OUT = [30, 30, 60], LIGHT = [214, 220, 234], CREAM = [238, 230, 212], BROWN = [168, 118, 86], MAT = [150, 140, 128], MAT2 = [110, 100, 92];
+  var DOGGY = { owner: 0, owner_pc1: 0, owner_pc2: 0, owner_walk1: 0, owner_walk2: 0, peek: 0, follow: 0 };
+
+  // 手描きの絵に「毛の伸び」「毛玉」「汚れ」を足す
   function dogSprite(name, look) {
-    look = look || { moko: 0, mats: 0, dirt: 0 };
-    var key = name + '|' + look.moko + '|' + look.mats + '|' + look.dirt;
+    var r = resolve(name, look);
+    var lk = look || { moko: 0, mats: 0, dirt: 0 };
+    var isDog = !(name in DOGGY) && name.indexOf('i_') !== 0;
+    var key = r.name + '|' + (isDog ? r.fluff + '|' + (r.cream ? 1 : 0) + '|' + lk.mats + '|' + lk.dirt : '');
     if (cache[key]) return cache[key];
-    var im = raw[name];
+    var im = raw[r.name];
     if (!im) return null;
     var pad = 4, w = im.width + pad * 2, h = im.height + pad * 2;
     var c = document.createElement('canvas'); c.width = w; c.height = h;
     var g = c.getContext('2d');
     g.drawImage(im, pad, pad);
-    var d = g.getImageData(0, 0, w, h), px = d.data;
-    var idx = function (x, y) { return (y * w + x) * 4; };
-    var inside = function (x, y) { return x >= 0 && y >= 0 && x < w && y < h && px[idx(x, y) + 3] > 0; };
-    var isCol = function (x, y, col) { var i = idx(x, y); return px[i] === col[0] && px[i + 1] === col[1] && px[i + 2] === col[2]; };
-    var set = function (x, y, col) { var i = idx(x, y); px[i] = col[0]; px[i + 1] = col[1]; px[i + 2] = col[2]; px[i + 3] = 255; };
+    c.pad = pad;
+    cache[key] = c;
+    if (!isDog) return c;
 
-    var orig = new Uint8Array(w * h);
-    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) orig[y * w + x] = inside(x, y) ? 1 : 0;
-    var origEdge = function (x, y) {
-      return orig[y * w + x] && (!orig[y * w + x - 1] || !orig[y * w + x + 1] || !orig[(y - 1) * w + x] || !orig[(y + 1) * w + x]);
-    };
+    var d = g.getImageData(0, 0, w, h), px = d.data;
+    var at = function (x, y) { return (y * w + x) * 4; };
+    var inside = function (x, y) { return x >= 0 && y >= 0 && x < w && y < h && px[at(x, y) + 3] > 0; };
+    var white = function (x, y) { var i = at(x, y); return px[i + 3] > 0 && px[i] > 205 && px[i + 1] > 205 && px[i + 2] > 205; };
+    var dark = function (x, y) { var i = at(x, y); return px[i + 3] > 0 && px[i] + px[i + 1] + px[i + 2] < 210; };
+    var set = function (x, y, col) { var i = at(x, y); px[i] = col[0]; px[i + 1] = col[1]; px[i + 2] = col[2]; px[i + 3] = 255; };
 
     // 毛がのびる：上と横に不ぞろいにふくらませる（足元はそのまま）
-    if (look.moko > 0) {
-      var region = orig.slice();
-      var limitY = pad + Math.floor(im.height * 0.72);
-      for (var it = 0; it < look.moko; it++) {
+    if (r.fluff > 0) {
+      var region = new Uint8Array(w * h), orig = new Uint8Array(w * h);
+      for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) region[y * w + x] = orig[y * w + x] = inside(x, y) ? 1 : 0;
+      var limitY = pad + Math.floor(im.height * 0.7);
+      for (var it = 0; it < r.fluff; it++) {
         var add = [];
         for (y = 1; y < Math.min(limitY, h - 1); y++) for (x = 1; x < w - 1; x++) {
-          if (region[y * w + x]) continue;
-          if (region[y * w + x - 1] || region[y * w + x + 1] || region[(y - 1) * w + x] || region[(y + 1) * w + x]) {
-            if (hash(x, y, it + name.length) < 0.8) add.push(y * w + x);
-          }
+          var p0 = y * w + x;
+          if (region[p0]) continue;
+          if ((region[p0 - 1] || region[p0 + 1] || region[p0 - w] || region[p0 + w]) && hash(x, y, it + r.name.length) < 0.8) add.push(p0);
         }
         add.forEach(function (p) { region[p] = 1; });
       }
+      var fur = r.cream ? CREAM : [250, 250, 252];
       for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
         var p = y * w + x;
-        if (!region[p]) continue;
+        if (!region[p] || orig[p]) continue;
         var edge = !region[p - 1] || !region[p + 1] || !region[p - w] || !region[p + w];
-        if (edge) set(x, y, OUT);
-        else if (!orig[p]) set(x, y, hash(x, y, 7) < 0.25 ? LIGHT : WHITE);
-        else if (origEdge(x, y) && y < limitY) set(x, y, hash(x, y, 3) < 0.5 ? LIGHT : WHITE);
+        set(x, y, edge ? OUT : (hash(x, y, 7) < 0.25 ? LIGHT : fur));
+      }
+      // 元の輪郭のうち、毛に埋もれた部分は明るくする
+      for (y = 1; y < limitY; y++) for (x = 1; x < w - 1; x++) {
+        p = y * w + x;
+        if (!orig[p] || !dark(x, y)) continue;
+        var wasEdge = !orig[p - 1] || !orig[p + 1] || !orig[p - w] || !orig[p + w];
+        var nowEdge = !region[p - 1] || !region[p + 1] || !region[p - w] || !region[p + w];
+        if (wasEdge && !nowEdge) set(x, y, hash(x, y, 3) < 0.5 ? LIGHT : fur);
       }
     }
 
-    // 白い毛の場所（内側）を集める
+    // 白い毛の場所（内側）
     var whites = [];
     for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
-      if (isCol(x, y, WHITE) && inside(x - 1, y) && inside(x + 1, y) && inside(x, y - 1) && inside(x, y + 1)) whites.push([x, y]);
+      if (white(x, y) && inside(x - 1, y) && inside(x + 1, y) && inside(x, y - 1) && inside(x, y + 1)) whites.push([x, y]);
     }
+    if (r.cream) whites.forEach(function (q) { if (hash(q[0], q[1], 13) < 0.7) set(q[0], q[1], CREAM); });
 
-    // 汚れ：全体が黄ばむ＋目の下と口まわりが茶色
-    if (look.dirt > 0) {
-      var eyes = [];
-      for (y = 1; y < h - 3; y++) for (x = 1; x < w - 1; x++) {
-        if (isCol(x, y, OUT) && inside(x - 1, y) && inside(x + 1, y) && inside(x, y - 1) && inside(x, y + 1) && y < pad + im.height * 0.45) eyes.push([x, y]);
+    // 汚れ：目の下が茶色、ひどいと全体が黄ばむ
+    if (lk.dirt > 0 && r.name !== 'tears') {
+      for (y = pad + 2; y < pad + im.height * 0.45; y++) for (x = 1; x < w - 1; x++) {
+        if (dark(x, y) && inside(x - 1, y) && inside(x + 1, y) && inside(x, y - 1) && inside(x, y + 1) && white(x, y + 1)) {
+          for (var k = 1; k <= lk.dirt; k++) if (white(x, y + k)) set(x, y + k, BROWN);
+        }
       }
-      eyes.forEach(function (e) {
-        for (var k = 1; k <= look.dirt; k++) if (isCol(e[0], e[1] + k, WHITE) || isCol(e[0], e[1] + k, LIGHT)) set(e[0], e[1] + k, BROWN);
-      });
-      if (look.dirt >= 2) whites.forEach(function (q) { if (hash(q[0], q[1], 11) < 0.55) set(q[0], q[1], CREAM); });
     }
+    if (lk.dirt >= 2) whites.forEach(function (q) { if (hash(q[0], q[1], 11) < 0.5) set(q[0], q[1], CREAM); });
 
-    // 毛玉：灰色のかたまりを散らす
-    if (look.mats > 0 && whites.length) {
-      for (var m = 0; m < look.mats * 2; m++) {
+    // 毛玉：くすんだかたまりを散らす
+    if (lk.mats > 0 && whites.length) {
+      for (var m = 0; m < lk.mats * 3; m++) {
         var q = whites[Math.floor(hash(m, whites.length, 5) * whites.length)];
-        set(q[0], q[1], DARK);
-        if (inside(q[0] + 1, q[1])) set(q[0] + 1, q[1], MID);
-        if (inside(q[0], q[1] - 1)) set(q[0], q[1] - 1, MID);
+        set(q[0], q[1], MAT2);
+        if (inside(q[0] + 1, q[1])) set(q[0] + 1, q[1], MAT);
+        if (inside(q[0], q[1] - 1)) set(q[0], q[1] - 1, MAT);
       }
     }
 
     g.putImageData(d, 0, 0);
-    c.pad = pad;
-    cache[key] = c;
     return c;
   }
 
-  // 足元中央 (x, y) を基準に犬を描く
+  // 足元中央 (x, y)（論理座標）を基準に描く
   function drawDog(g, name, x, y, look, opt) {
     opt = opt || {};
     var s = dogSprite(name, look);
     if (!s) return;
-    var sc = opt.scale || SCALE, sx = opt.sx || 1;
-    var dw = Math.round(s.width * sc * sx), dh = s.height * sc;
+    var sc = (opt.scale || SCALE[name] || DOG_SCALE);
+    var dw = Math.round(s.width * sc * (opt.sx || 1)), dh = Math.round(s.height * sc);
     g.save();
-    g.translate(Math.round(x), Math.round(y - dh + s.pad * sc));
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.imageSmoothingEnabled = false;
+    g.translate(Math.round(x * PX), Math.round(y * PX - dh + s.pad * sc));
     if (opt.flipX) g.scale(-1, 1);
     if (opt.flipY) { g.translate(0, dh); g.scale(1, -1); }
     if (opt.alpha != null) g.globalAlpha = opt.alpha;
@@ -137,7 +171,16 @@
     g.restore();
   }
 
-  // --- 小さなドット模様 ---
+  function drawPic(g, name) {
+    var im = pics[name];
+    if (!im) return false;
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.imageSmoothingEnabled = true;
+    g.drawImage(im, 0, 0, W * PX, H * PX);
+    g.restore();
+    return true;
+  }
+
+  // --- 小さなドット模様（論理座標） ---
   function pattern(g, rows, x, y, cols, s) {
     s = s || 1;
     for (var r = 0; r < rows.length; r++) for (var c = 0; c < rows[r].length; c++) {
@@ -149,12 +192,10 @@
   }
   var HEART = ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...'];
   var SPARK = ['..#..', '..#..', '##.##', '..#..', '..#..'];
-  var NOTE = ['..##', '..#.', '..#.', '###.', '###.'];
   var DROP = ['.#.', '###', '###', '.#.'];
   var Z = ['####', '..#.', '.#..', '####'];
   function heart(g, x, y, s) { pattern(g, HEART, x, y, { '#': '#f2949f' }, s); }
   function spark(g, x, y, col) { pattern(g, SPARK, x, y, { '#': col || '#ffd86b' }); }
-
   function rect(g, col, x, y, w, h) { g.fillStyle = col; g.fillRect(x, y, w, h); }
   function ellipse(g, col, cx, cy, rx, ry) {
     g.fillStyle = col;
@@ -163,91 +204,9 @@
       g.fillRect(cx - hw, cy + yy, hw * 2, 1);
     }
   }
-  function cloud(g, x, y) { ellipse(g, '#ffffff', x, y, 12, 4); ellipse(g, '#ffffff', x + 8, y - 3, 8, 4); ellipse(g, '#ffffff', x - 6, y - 2, 6, 3); }
 
-  // --- 背景 ---
-  var SEASON_TREE = { spring: ['#f7b9cd', '#f29bb5'], rainy: ['#7cc49a', '#5aa97c'], summer: ['#6cc27e', '#4ea562'], autumn: ['#f0a24a', '#d97a3a'], winter: ['#e9f2f7', '#c9d9e4'] };
-
-  function room(g, night) {
-    rect(g, night ? '#d9c7e6' : '#fdeff2', 0, 0, W, 104);
-    for (var x = 0; x < W; x += 16) rect(g, night ? '#cfbadf' : '#f9e1e8', x, 0, 8, 104);
-    rect(g, '#e7c6cf', 0, 100, W, 6);
-    rect(g, night ? '#c9a985' : '#ebcfa8', 0, 106, W, 54);
-    for (var y = 112; y < H; y += 9) {
-      rect(g, night ? '#b6966f' : '#d9b88c', 0, y, W, 1);
-      for (x = (y % 18 === 4 ? 0 : 24); x < W; x += 48) rect(g, night ? '#b6966f' : '#d9b88c', x, y - 8, 1, 8);
-    }
-    // 窓
-    rect(g, '#2a2c4a', 148, 14, 66, 58);
-    rect(g, night ? '#2b3566' : '#bfe6f5', 151, 17, 60, 52);
-    if (night) {
-      pattern(g, ['.###.', '##...', '##...', '##...', '.###.'], 196, 22, { '#': '#fff3b0' }, 2);
-      [[160, 26], [178, 40], [170, 58], [200, 52]].forEach(function (p) { rect(g, '#fff3b0', p[0], p[1], 1, 1); });
-    } else { cloud(g, 172, 36); cloud(g, 198, 54); }
-    rect(g, '#2a2c4a', 180, 17, 2, 52); rect(g, '#2a2c4a', 151, 42, 60, 2);
-    rect(g, '#ffffff', 144, 70, 74, 5); rect(g, '#2a2c4a', 144, 75, 74, 1);
-    // ソファ
-    rect(g, '#2a2c4a', 10, 64, 76, 48);
-    rect(g, '#9ec3e8', 12, 66, 72, 26);
-    rect(g, '#86b0da', 12, 90, 72, 20);
-    rect(g, '#b8d6f2', 18, 72, 26, 16); rect(g, '#b8d6f2', 52, 72, 26, 16);
-    // 植木
-    rect(g, '#2a2c4a', 229, 86, 18, 20); rect(g, '#e9a07a', 231, 88, 14, 17);
-    ellipse(g, '#6cc27e', 238, 76, 11, 12); ellipse(g, '#4ea562', 234, 80, 5, 6);
-    // ラグ
-    ellipse(g, '#a8d3c0', 128, 138, 70, 14); ellipse(g, '#c9e7da', 128, 138, 66, 12);
-    // 時計
-    ellipse(g, '#2a2c4a', 112, 30, 9, 9); ellipse(g, '#ffffff', 112, 30, 7, 7);
-    rect(g, '#2a2c4a', 112, 25, 1, 6); rect(g, '#2a2c4a', 112, 30, 4, 1);
-  }
-
-  function park(g, season, scroll) {
-    rect(g, season === 'rainy' ? '#b9c7d8' : season === 'winter' ? '#d6e6f2' : '#bfe6f5', 0, 0, W, 90);
-    rect(g, season === 'rainy' ? '#c7d3e1' : '#d4eff8', 0, 60, W, 30);
-    if (season === 'summer') { ellipse(g, '#ffe27a', 30, 22, 10, 10); ellipse(g, '#fff3b0', 30, 22, 7, 7); }
-    var off = Math.floor(scroll || 0);
-    cloud(g, ((60 - off * 0.2) % 300 + 300) % 300 - 20, 24);
-    cloud(g, ((200 - off * 0.2) % 300 + 300) % 300 - 20, 40);
-    rect(g, season === 'winter' ? '#f4f8fb' : season === 'autumn' ? '#c6d98a' : '#a8db8f', 0, 88, W, 72);
-    var tc = SEASON_TREE[season] || SEASON_TREE.spring;
-    for (var i = 0; i < 6; i++) {
-      var tx = ((i * 64 - off * 0.6) % 384 + 384) % 384 - 40;
-      rect(g, '#8a5a3c', tx + 10, 70, 6, 22);
-      ellipse(g, tc[1], tx + 13, 60, 18, 16);
-      ellipse(g, tc[0], tx + 11, 57, 14, 12);
-    }
-    rect(g, season === 'winter' ? '#e2e9ef' : '#ead7b0', 0, 118, W, 30);
-    rect(g, season === 'winter' ? '#cfd9e2' : '#d9c092', 0, 118, W, 2);
-    for (i = 0; i < 12; i++) {
-      var fx = ((i * 37 - off) % 296 + 296) % 296 - 20;
-      if (season !== 'winter') pattern(g, ['.#.', '#o#', '.#.'], fx, 152 - (i % 3) * 3, { '#': season === 'autumn' ? '#f0a24a' : '#f7b9cd', o: '#ffd86b' });
-    }
-  }
-
-  function salon(g) {
-    rect(g, '#e8f4f4', 0, 0, W, 110);
-    for (var x = 0; x < W; x += 16) rect(g, '#d6ecec', x, 0, 1, 110);
-    for (var y = 0; y < 110; y += 16) rect(g, '#d6ecec', 0, y, W, 1);
-    rect(g, '#f7d6dc', 0, 106, W, 54);
-    for (x = 0; x < W; x += 16) for (y = 106; y < H; y += 16) if (((x + y) / 16) % 2 === 0) rect(g, '#f3c4cd', x, y, 16, 16);
-    ellipse(g, '#2a2c4a', 60, 50, 26, 32); ellipse(g, '#cfe9f5', 60, 50, 23, 29); rect(g, '#ffffff', 48, 32, 3, 20);
-    rect(g, '#2a2c4a', 150, 20, 80, 22); rect(g, '#f2949f', 152, 22, 76, 18);
-    pattern(g, ['#...#', '.#.#.', '..#..', '.#.#.', '#...#'], 160, 24, { '#': '#ffffff' }, 2);
-    pattern(g, ['.##.', '#..#', '.##.'], 160, 34, { '#': '#ffffff' }, 1);
-    rect(g, '#ffffff', 178, 28, 44, 3);
-    rect(g, '#2a2c4a', 96, 120, 110, 8); rect(g, '#ffffff', 98, 121, 106, 5);
-  }
-
-  function vet(g) {
-    rect(g, '#eaf6ee', 0, 0, W, 106);
-    rect(g, '#d2ecdc', 0, 96, W, 10);
-    rect(g, '#dde6ea', 0, 106, W, 54);
-    rect(g, '#7fcfae', 110, 18, 36, 12); rect(g, '#7fcfae', 122, 6, 12, 36);
-    rect(g, '#2a2c4a', 70, 116, 120, 6); rect(g, '#ffffff', 72, 117, 116, 3);
-    rect(g, '#2a2c4a', 76, 122, 4, 30); rect(g, '#2a2c4a', 176, 122, 4, 30);
-    rect(g, '#ffffff', 196, 24, 40, 50); rect(g, '#2a2c4a', 196, 24, 40, 2);
-    for (var i = 0; i < 5; i++) rect(g, '#b9c7d8', 200, 32 + i * 8, 30, 2);
-  }
+  // --- 手描きの場面（画像がない場面用） ---
+  function plain(g, top, bottom, split) { rect(g, top, 0, 0, W, split); rect(g, bottom, 0, split, W, H - split); }
 
   function stage(g, t) {
     rect(g, '#3b2f5c', 0, 0, W, H);
@@ -258,8 +217,6 @@
     g.globalAlpha = 0.25; g.fillStyle = '#fff6c8';
     g.beginPath(); g.moveTo(118, 0); g.lineTo(138, 0); g.lineTo(186, 140); g.lineTo(70, 140); g.fill(); g.globalAlpha = 1;
     rect(g, '#8a5a3c', 0, 118, W, 42); rect(g, '#a8704b', 0, 118, W, 3);
-    rect(g, '#2a2c4a', 96, 128, 64, 22); rect(g, '#ffd86b', 98, 130, 60, 18);
-    pattern(g, ['.##.', '#.##', '..#.', '..#.', '.###'], 122, 132, { '#': '#b8862b' }, 2);
     var cols = ['#f2949f', '#ffd86b', '#7fcfae', '#9fd3ee', '#ffffff'];
     for (var i = 0; i < 40; i++) {
       var cx = (i * 53) % W, cy = ((i * 29 + t * 30 * (1 + (i % 3) * 0.3)) % 130);
@@ -277,156 +234,144 @@
     g.fillText('ビションフリーゼ協会', 128, 43);
     for (var x = 74; x < 180; x += 24) { rect(g, '#2a2c4a', x, 60, 16, 14); rect(g, '#ffe7a8', x + 2, 62, 12, 10); }
     rect(g, '#2a2c4a', 114, 78, 28, 26); rect(g, '#8e7cc3', 116, 80, 24, 24);
-    rect(g, '#7a7f99', 0, 104, W, 2);
   }
 
-  function bath(g) {
-    room(g, false);
-    rect(g, '#2a2c4a', 84, 112, 90, 36); rect(g, '#ffffff', 86, 114, 86, 32); rect(g, '#cfe9f5', 86, 114, 86, 6);
-    rect(g, '#2a2c4a', 92, 148, 6, 6); rect(g, '#2a2c4a', 160, 148, 6, 6);
-  }
-
-  function desk(g) {
-    rect(g, '#2a2c4a', 150, 100, 84, 6); rect(g, '#c99a6b', 152, 101, 80, 4);
-    rect(g, '#2a2c4a', 154, 106, 4, 40); rect(g, '#2a2c4a', 226, 106, 4, 40);
-    rect(g, '#2a2c4a', 170, 76, 44, 26); rect(g, '#9fd3ee', 172, 78, 40, 20);
-    for (var i = 0; i < 4; i++) rect(g, '#ffffff', 176, 82 + i * 4, 18 + (i * 7) % 14, 1);
-    rect(g, '#2a2c4a', 164, 100, 56, 2);
-  }
-
-  function title(g, t) {
-    park(g, 'spring', t * 8);
+  function tub(g) {
+    rect(g, '#2a2c4a', 84, 118, 90, 34); rect(g, '#ffffff', 86, 120, 86, 30); rect(g, '#cfe9f5', 86, 120, 86, 6);
+    rect(g, '#2a2c4a', 92, 152, 6, 6); rect(g, '#2a2c4a', 160, 152, 6, 6);
   }
 
   // --- アニメーション ---
-  var anim = { name: 'idle', t0: 0, x: 128, tx: 128, face: 1, wait: 0, scene: 'room', season: 'spring', look: null, opts: {} };
+  var anim = { name: 'idle', t0: 0, scene: 'room', season: 'spring', look: null, opts: {}, x: 128, tx: 128, pose: 'front1', flip: false, wait: 2 };
 
   function setAnim(name, scene, opts) {
     anim.name = name; anim.scene = scene || anim.scene; anim.t0 = performance.now() / 1000; anim.opts = opts || {};
-    if (name === 'idle') { anim.x = 128; anim.tx = 128; anim.wait = 1; }
+    if (name === 'idle') { anim.x = 128; anim.tx = 128; anim.pose = 'front1'; anim.wait = 2; }
   }
+
+  var IDLE_POSES = ['front1', 'front1', 'sit1', 'side1', 'side2', 'doze', 'lie'];
 
   function drawScene(g, t, dt) {
     var at = t - anim.t0, look = anim.look, sea = anim.season;
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.imageSmoothingEnabled = false;
-    switch (anim.scene) {
-      case 'room': room(g, false); break;
-      case 'night': room(g, true); break;
-      case 'park': park(g, sea, at * 40); break;
-      case 'salon': salon(g); break;
-      case 'vet': vet(g); break;
-      case 'stage': stage(g, t); break;
-      case 'kyokai': kyokai(g); break;
-      case 'bath': bath(g); break;
-      case 'desk': room(g, true); desk(g); break;
-      case 'title': title(g, t); break;
-    }
+    g.clearRect(0, 0, W * PX, H * PX);
+
+    // 背景
+    var sc = anim.scene;
+    if (sc.indexOf('cg:') === 0) { if (!drawPic(g, 'ev_' + sc.slice(3))) plain(g, '#fdeff2', '#ebcfa8', 106); }
+    else if (sc === 'room' || sc === 'bath') { if (!drawPic(g, 'bg_room')) plain(g, '#fdeff2', '#ebcfa8', 106); }
+    else if (sc === 'night' || sc === 'desk') { if (!drawPic(g, 'bg_night')) plain(g, '#d9c7e6', '#c9a985', 106); }
+    else if (sc === 'park') { if (!drawPic(g, 'bg_park')) plain(g, '#bfe6f5', '#a8db8f', 88); }
+    g.setTransform(PX, 0, 0, PX, 0, 0);
+    g.imageSmoothingEnabled = false;
+    if (sc === 'stage') stage(g, t);
+    if (sc === 'kyokai') kyokai(g);
+    if (sc === 'bath') tub(g);
+
     var f2 = Math.floor(at * 3) % 2, f4 = Math.floor(at * 7) % 4;
+    var FLOOR = 152;
 
     switch (anim.name) {
       case 'idle':
-        // 部屋をうろうろする
-        if (anim.wait > 0) {
-          anim.wait -= dt;
-          var blink = (at % 3) < 0.25;
-          drawDog(g, blink ? 'front2' : 'front1', anim.x, 142, look);
-          if (anim.wait <= 0) anim.tx = 60 + Math.random() * 140;
-        } else {
+        // 部屋でのんびり。ときどき場所とポーズを変える
+        anim.wait -= dt;
+        if (Math.abs(anim.tx - anim.x) > 1) {
           var dir = anim.tx > anim.x ? 1 : -1;
-          anim.x += dir * 28 * dt;
-          drawDog(g, (dir > 0 ? 'walkR' : 'walkL') + (f4 + 1), anim.x, 142, look);
-          if (Math.abs(anim.tx - anim.x) < 2) anim.wait = 1.5 + Math.random() * 2.5;
+          anim.x += dir * 30 * dt;
+          drawDog(g, Math.floor(at * 8) % 2 ? 'run1' : 'run2', anim.x, FLOOR, look, { flipX: dir < 0 });
+        } else {
+          var pose = anim.pose === 'front1' && (at % 3) < 0.25 ? 'blink' : anim.pose;
+          drawDog(g, pose, anim.x, FLOOR, look, { flipX: anim.flip });
+          if (anim.pose === 'doze' || anim.pose === 'lie') pattern(g, Z, anim.x + 18 + f2 * 2, FLOOR - 50 - f2 * 3, { '#': '#5d6180' }, 2);
+          if (anim.wait <= 0) {
+            anim.wait = 3 + Math.random() * 3;
+            if (Math.random() < 0.4) { anim.tx = 70 + Math.random() * 120; anim.pose = 'front1'; }
+            else { anim.pose = IDLE_POSES[Math.floor(Math.random() * IDLE_POSES.length)]; anim.flip = Math.random() < 0.5; }
+          }
         }
         break;
       case 'walk':
-        drawDog(g, 'walkR' + (f4 + 1), 110, 140, look);
-        rect(g, '#d6465a', 124, 110, 1, 1);
-        g.strokeStyle = '#d6465a'; g.lineWidth = 1; g.beginPath(); g.moveTo(128, 116); g.lineTo(170, 60); g.stroke();
+        drawDog(g, 'walk' + (f4 + 1), 128, 156, look);
         if (sea === 'rainy') rain(g, t);
         if (sea === 'winter') snow(g, t);
+        if (sea === 'summer') { g.globalAlpha = 0.15; rect(g, '#ffb347', 0, 0, W, H); g.globalAlpha = 1; }
         break;
       case 'brush':
-        drawDog(g, 'sit2', 128, 142, look);
-        var bx = 118 + Math.sin(at * 6) * 14;
-        rect(g, '#2a2c4a', bx - 1, 92, 22, 8); rect(g, '#f2949f', bx, 93, 20, 6);
-        rect(g, '#2a2c4a', bx + 20, 94, 14, 4); rect(g, '#c99a6b', bx + 21, 95, 12, 2);
-        for (var i = 0; i < 5; i++) rect(g, '#b9c7d8', bx + 2 + i * 4, 100, 1, 3);
+        drawDog(g, f2 ? 'brush1' : 'brush2', 128, FLOOR, look);
         if (f2) spark(g, 160, 80); else spark(g, 94, 88, '#ffffff');
         break;
       case 'play':
-        var pf = ['ball1', 'play', 'ball2'][Math.floor(at * 3) % 3];
-        drawDog(g, pf, 128, 142, look);
-        if (f2) heart(g, 150, 76);
+        var bx = 128 + Math.sin(at * 3) * 60, by = 110 - Math.abs(Math.sin(at * 6)) * 30;
+        ellipse(g, '#d9606f', Math.round(bx + 36), Math.round(by), 5, 5); ellipse(g, '#f2949f', Math.round(bx + 35), Math.round(by - 1), 3, 3);
+        drawDog(g, Math.floor(at * 8) % 2 ? 'run1' : 'run2', bx, FLOOR, look, { flipX: Math.cos(at * 3) < 0 });
+        if (f2) heart(g, Math.round(bx) - 10, 70);
         break;
       case 'shampoo':
-        drawDog(g, 'front1', 128, 132, look);
-        for (i = 0; i < 9; i++) {
-          var bxx = 100 + (i * 23) % 60, byy = 90 + ((i * 17 + at * 20) % 40);
+        drawDog(g, 'front1', 128, 146, look);
+        for (var i = 0; i < 9; i++) {
+          var bxx = 100 + (i * 23) % 60, byy = 80 + ((i * 17 + at * 20) % 50);
           ellipse(g, '#ffffff', bxx, Math.floor(byy), 3, 3); rect(g, '#9fd3ee', bxx - 1, Math.floor(byy) - 1, 1, 1);
         }
         break;
       case 'wet':
-        drawDog(g, f2 ? 'front1' : 'front2', 128, 132, { moko: 0, mats: 0, dirt: 0 }, { sx: 0.62 });
-        for (i = 0; i < 4; i++) pattern(g, DROP, 110 + i * 12, 96 + ((at * 30 + i * 9) % 30), { '#': '#9fd3ee' });
-        break;
-      case 'salon':
-        drawDog(g, at > 1.8 ? 'cheer' : 'sit1', 150, 124, look);
-        if (at <= 1.8) {
-          var sx = 168 + Math.sin(at * 10) * 3;
-          pattern(g, ['#...#', '.#.#.', '..#..', '.#.#.', '##.##', '##.##'], sx, 78, { '#': '#2a2c4a' }, 2);
-        } else { spark(g, 124, 70); spark(g, 172, 80, '#f2949f'); }
+        drawDog(g, f2 ? 'wet1' : 'wet2', 128, 150, null);
+        for (i = 0; i < 4; i++) pattern(g, DROP, 104 + i * 14, 70 + ((at * 30 + i * 9) % 40), { '#': '#9fd3ee' });
         break;
       case 'job':
-        drawDog(g, 'sit2', 70, 146, look);
-        if (f2) pattern(g, ['#.#.#'], 64, 94, { '#': '#2a2c4a' }, 2);
+        drawDog(g, f2 ? 'owner_pc1' : 'owner_pc2', 170, 156, null);
+        drawDog(g, 'peek', 40, 156, look);
+        if (f2) pattern(g, ['#.#.#'], 52, 70, { '#': '#ffffff' }, 2);
         break;
       case 'blitz':
         var period = 1.1, ph = (at % period) / period, goingR = Math.floor(at / period) % 2 === 0;
         var bxp = goingR ? 30 + ph * 196 : 226 - ph * 196;
-        var name = (goingR ? 'walkR' : 'walkL') + (Math.floor(at * 16) % 4 + 1);
-        drawDog(g, name, bxp, 144 - Math.abs(Math.sin(at * 16)) * 4, look);
-        for (i = 0; i < 4; i++) rect(g, '#ffffff', bxp + (goingR ? -40 - i * 6 : 26 + i * 6), 112 + i * 7, 14, 2);
-        for (i = 0; i < 3; i++) ellipse(g, '#e6d3b3', bxp + (goingR ? -20 - i * 9 : 20 + i * 9), 142 - i, 3 + i, 2);
+        drawDog(g, Math.floor(at * 14) % 2 ? 'run1' : 'run2', bxp, FLOOR - Math.abs(Math.sin(at * 16)) * 4, look, { flipX: !goingR });
+        for (i = 0; i < 4; i++) rect(g, '#ffffff', bxp + (goingR ? -44 - i * 6 : 30 + i * 6), 112 + i * 7, 14, 2);
+        for (i = 0; i < 3; i++) ellipse(g, '#e6d3b3', bxp + (goingR ? -24 - i * 9 : 24 + i * 9), FLOOR - 2 - i, 3 + i, 2);
         break;
       case 'sleep':
-      case 'hesoten':
-        drawDog(g, f2 ? 'sleep1' : 'sleep2', 128, 144, look, anim.name === 'hesoten' ? { flipY: true } : null);
+        drawDog(g, 'lie', 128, FLOOR, look);
         pattern(g, Z, 150 + f2 * 3, 96 - f2 * 4, { '#': '#5d6180' }, 2);
         break;
+      case 'hesoten':
+        drawDog(g, f2 ? 'hesoten1' : 'hesoten2', 128, FLOOR, look);
+        pattern(g, Z, 162 + f2 * 3, 104 - f2 * 4, { '#': '#5d6180' }, 2);
+        break;
       case 'sick':
-        drawDog(g, 'lie1', 128, 144, look);
-        rect(g, '#2a2c4a', 128, 106, 14, 8); rect(g, '#9fd3ee', 129, 107, 12, 6);
-        pattern(g, DROP, 108, 104 + f2, { '#': '#9fd3ee' });
+        drawDog(g, f2 ? 'sick1' : 'sick2', 128, FLOOR, look);
+        break;
+      case 'heat':
+        drawDog(g, 'sick5', 128, FLOOR, look);
+        pattern(g, DROP, 104, 96 + f2, { '#': '#9fd3ee' });
+        g.globalAlpha = 0.18; rect(g, '#ff7a3d', 0, 0, W, H); g.globalAlpha = 1;
         break;
       case 'happy':
-        drawDog(g, f2 ? 'happy' : 'joy', 128, 144, look);
-        heart(g, 104, 80 - f2 * 2); heart(g, 146, 74 + f2 * 2);
+      case 'cheer':
+        drawDog(g, f2 ? 'cheer' : 'jump', 128, FLOOR - (f2 ? 0 : 6), look);
+        heart(g, 90, 50 - f2 * 2); heart(g, 156, 44 + f2 * 2);
+        if (anim.name === 'cheer') { spark(g, 76, 80); spark(g, 176, 76, '#f2949f'); }
         break;
       case 'side':
-        drawDog(g, f2 ? 'side1' : 'side2', 128, 142, look);
+        drawDog(g, f2 ? 'side1' : 'side2', 128, FLOOR, look);
         break;
       case 'front':
-        drawDog(g, (at % 3) < 0.25 ? 'front2' : 'front1', 128, 142, look);
+        drawDog(g, (at % 3) < 0.25 ? 'blink' : 'front1', 128, FLOOR, look);
         break;
       case 'eat':
-        drawDog(g, f2 ? 'eat1' : 'eat2', 128, 144, look);
+        drawDog(g, ['eat1', 'eat2', 'eat2', 'eat3'][Math.floor(at * 2) % 4], 128, FLOOR, look);
         break;
       case 'excited':
-        drawDog(g, 'excited', 128, 144, look);
+        drawDog(g, 'excited', 128, FLOOR, look);
         break;
-      case 'cheer':
-        drawDog(g, f2 ? 'cheer' : 'joy', 128, 126 - (f2 ? 4 : 0), look);
-        heart(g, 94, 60); heart(g, 150, 54); spark(g, 80, 90); spark(g, 170, 86, '#f2949f');
+      case 'stalker':
+        drawDog(g, Math.floor(at / 1.6) % 2 ? 'follow' : 'peek', 128, 156, look);
         break;
-      case 'leave':
-        // 協会の建物へ入っていく
-        var lx = 60 + Math.min(at, 4) * 17;
-        var fade = at < 4 ? 1 : Math.max(0, 1 - (at - 4));
-        drawDog(g, 'walkR' + (f4 + 1), lx, 118, look, { alpha: fade, scale: 1 });
+      case 'tears':
+        drawDog(g, 'tears', 128, FLOOR, null);
         break;
-      case 'title':
-        drawDog(g, f2 ? 'cheer' : 'joy', 128, 146 - (f2 ? 4 : 0), look, { scale: 3 });
-        heart(g, 82, 58 - f2 * 2, 2); spark(g, 180, 50); spark(g, 60, 90, '#ffffff');
+      case 'matting':
+        drawDog(g, 'm_side', 128, FLOOR, null);
         break;
       case 'none':
         break;
@@ -442,20 +387,9 @@
     for (var i = 0; i < 30; i++) { var x = (i * 47 + Math.sin(t + i) * 6) % W, y = ((i * 31 + t * 20) % H); g.fillRect(Math.floor(x), Math.floor(y), 2, 2); }
   }
 
-  // 16x16 のアイコン（行動ボタン用）
-  var ICONS = {
-    walk:   ['......####......', '.....#....#.....', '....#......#....', '....#......#....', '.....#....#.....', '......####......', '.......##.......', '.......##.......', '.......##.......', '.......##.......', '.......##.......', '.......##.......', '....########....', '...#........#...', '...#........#...', '....########....'],
-    brush:  ['................', '..############..', '..#..........#..', '..#.#.#.#.#.#.#.', '..#.#.#.#.#.#.#.', '..############..', '......####......', '......#..#......', '......#..#......', '......#..#......', '......#..#......', '......#..#......', '......#..#......', '......####......', '................', '................'],
-    play:   ['................', '.....######.....', '...##oooooo##...', '..#oooooooooo#..', '.#oo##oooooooo#.', '.#o#oooooooooo#.', '#oo#ooooooooooo#', '#oooooooooooooo#', '#oooooooooooooo#', '#oooooooooooooo#', '.#oooooooooooo#.', '.#oooooooooooo#.', '..#oooooooooo#..', '...##oooooo##...', '.....######.....', '................'],
-    shampoo:['.....####.......', '.....#..#.......', '....######......', '...#......#.....', '...#.bbbb.#..o..', '...#.b..b.#.o.o.', '...#.bbbb.#..o..', '...#......#.....', '...#......#..o..', '...#......#.....', '...#......#.o...', '...########.....', '................', '................', '................', '................'],
-    salon:  ['................', '.##.........##..', '#..#.......#..#.', '#..#.......#..#.', '.##.#.....#.##..', '.....#...#......', '......#.#.......', '.......#........', '......#.#.......', '.....#...#......', '....#.....#.....', '...#.......#....', '..#.........#...', '................', '................', '................'],
-    job:    ['................', '..############..', '..#bbbbbbbbbb#..', '..#b........b#..', '..#b.####...b#..', '..#b........b#..', '..#b.######.b#..', '..#b........b#..', '..#bbbbbbbbbb#..', '..############..', '.##############.', '#..............#', '################', '................', '................', '................']
-  };
-  function iconURL(id) {
-    var c = document.createElement('canvas'); c.width = 16; c.height = 16;
-    pattern(c.getContext('2d'), ICONS[id] || ICONS[id === 'bigjob' ? 'job' : 'walk'], 0, 0, { '#': '#2a2c4a', o: '#f2949f', b: '#9fd3ee' });
-    return c.toDataURL();
-  }
+  // 行動ボタンのアイコン
+  var ICON = { walk: 'i_leash', brush: 'i_brush', play: 'i_heart', shampoo: 'i_shower', salon: 'i_scissors', job: 'i_laptop', bigjob: 'i_coin' };
+  function iconURL(id) { return window.SPRITES[ICON[id] || 'i_heart'] || ''; }
 
   window.Art = { W: W, H: H, load: load, lookOf: lookOf, drawScene: drawScene, setAnim: setAnim, anim: anim, iconURL: iconURL };
 })();
