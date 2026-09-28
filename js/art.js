@@ -56,10 +56,13 @@
   }
 
   // モコモコの段階で、手描きの差分があるポーズは差し替える
-  var MOKO_SWAP = { front1: 'm_front', blink: 'm_blink', doze: 'm_blink', side1: 'm_side', side2: 'm_side', sit1: 'm_sit', sit2: 'm_sit', sit3: 'm_sit', sit4: 'm_sit' };
+  // ふつう（少し伸びた）は a2、モコモコは a3 の手描き差分
+  var MOKO_SWAP = { front1: 'm_front', blink: 'm_blink', doze: 'm_blink', side1: 'm_side', sit1: 'm_sit', sit3: 'm_sit', sit4: 'm_sit' };
+  var NORMAL_SWAP = { front1: 'n_front', blink: 'n_blink', side1: 'n_side', sit1: 'n_sit', sit3: 'n_sit', sit4: 'n_sit' };
   function resolve(name, look) {
     if (!look) return { name: name, fluff: 0 };
     if (look.moko >= 2 && MOKO_SWAP[name]) return { name: MOKO_SWAP[name], fluff: look.moko - 2 };
+    if (look.moko === 1 && NORMAL_SWAP[name] && look.dirt === 0) return { name: NORMAL_SWAP[name], fluff: 0 };
     if (look.dirt >= 1 && look.moko < 2 && (name === 'front1' || name === 'sit1')) return { name: 'tears', fluff: look.moko };
     return { name: name, fluff: look.moko, cream: look.moko >= 2 };
   }
@@ -249,7 +252,7 @@
     if (name === 'idle') { anim.x = 128; anim.tx = 128; anim.pose = 'front1'; anim.wait = 2; }
   }
 
-  var IDLE_POSES = ['front1', 'front1', 'sit1', 'side1', 'side2', 'doze', 'lie'];
+  var IDLE_POSES = ['front1', 'front1', 'sit1', 'side1', 'side1', 'doze', 'lie'];
 
   function drawScene(g, t, dt) {
     var at = t - anim.t0, look = anim.look, sea = anim.season;
@@ -353,7 +356,7 @@
         if (anim.name === 'cheer') { spark(g, 76, 80); spark(g, 176, 76, '#f2949f'); }
         break;
       case 'side':
-        drawDog(g, f2 ? 'side1' : 'side2', 128, FLOOR, look);
+        drawDog(g, 'side1', 128, FLOOR - (f2 ? 2 : 0), look);
         break;
       case 'front':
         drawDog(g, (at % 3) < 0.25 ? 'blink' : 'front1', 128, FLOOR, look);
