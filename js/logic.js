@@ -20,6 +20,8 @@
   var WARN_CUTE = 53;     // かわいさがこれ未満だと協会から警告
   var WARN_HEALTH = 30;   // 健康がこれ未満だと協会から警告
   var WIN_SCORE = 840;    // 優勝ライン
+  var ENTRY_FEE = 15000;  // コンテストの登録料
+  var ENTRY_WEEK = 44;    // 登録料を払う週
 
   var ACTIONS = [
     { id: 'walk',    label: 'おさんぽ',     cost: 0,          desc: '健康↑ ストレス↓ ちょっと汚れる' },
@@ -36,7 +38,7 @@
     6:  { title: '狂犬病ワクチン', cost: 3500, text: '年に1回の狂犬病ワクチン。法律で決まっています。' },
     10: { title: '混合ワクチン', cost: 8000, text: '混合ワクチンの季節。病院はちょっと苦手。' },
     30: { title: 'ノミ・ダニ予防', cost: 4000, text: '夏の草むらはノミやダニがいっぱい。予防薬を買いました。' },
-    40: { title: '健康診断', cost: 7000, text: 'コンテスト前の健康診断。問題なし！' }
+    40: { title: '健康診断', cost: 7000, text: 'コンテスト前の健康診断。問題なし！\n第44週にはコンテストの登録料 15,000円 がかかります。今から貯めておこう。' }
   };
 
   // その週に払う決まった出費（週末に引かれる）
@@ -44,6 +46,7 @@
     var list = [];
     if (CALENDAR[week]) list.push(CALENDAR[week]);
     if (week === 8) list.push({ title: 'フィラリア検査', cost: FILARIA_TEST_COST, text: '蚊の季節の前に、フィラリアにかかっていないか血液検査。' });
+    if (week === ENTRY_WEEK) list.push({ title: 'コンテスト登録料', cost: ENTRY_FEE, text: 'ビションフリーゼ・コンテストの登録料。これを払わないと大会に出られない！' });
     if (week >= 8 && week <= 40 && week % 4 === 0) list.push({ title: 'フィラリア予防薬', cost: FILARIA_MED_COST, text: '月に1回のフィラリアのお薬。蚊がいる季節は毎月欠かせない。' });
     return list;
   }
@@ -444,7 +447,7 @@
 
   root.Logic = {
     TOTAL_WEEKS: TOTAL_WEEKS, SLOTS: SLOTS, ACTIONS: ACTIONS, EVENTS: EVENTS, CALENDAR: CALENDAR,
-    MAX_WARN: MAX_WARN, WARN_CUTE: WARN_CUTE, WARN_HEALTH: WARN_HEALTH, WIN_SCORE: WIN_SCORE, START_MONEY: START_MONEY, SEASON_LABEL: SEASON_LABEL, FOOD_COST: FOOD_COST,
+    MAX_WARN: MAX_WARN, ENTRY_FEE: ENTRY_FEE, ENTRY_WEEK: ENTRY_WEEK, WARN_CUTE: WARN_CUTE, WARN_HEALTH: WARN_HEALTH, WIN_SCORE: WIN_SCORE, START_MONEY: START_MONEY, SEASON_LABEL: SEASON_LABEL, FOOD_COST: FOOD_COST,
     expensesFor: expensesFor, canDo: canDo, SUMMER_START: 21,
     newGame: newGame, cute: cute, cuteLabel: cuteLabel, season: season, slotsFor: slotsFor,
     actionCost: actionCost, runAction: runAction, endWeek: endWeek, kyokaiCheck: kyokaiCheck,

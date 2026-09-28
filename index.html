@@ -179,6 +179,13 @@
 
   .breakdown { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; max-width: 320px; font-variant-numeric: tabular-nums; }
   .breakdown .t { border-top: 3px solid var(--line); padding-top: 4px; font-size: 20px; }
+  .finalscore { border: 3px solid var(--line); background: #fffbef; padding: 12px 14px; display: grid; gap: 8px; max-width: 420px; box-shadow: 0 3px 0 var(--shadow); }
+  .fs-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .fs-label { font-size: 13px; color: var(--ink-soft); letter-spacing: .08em; }
+  .fs-rank { border: 2px solid var(--line); padding: 0 10px; background: #fff; }
+  .fs-rank.rank1 { background: var(--butter); } .fs-rank.rank2 { background: #e4e8f0; } .fs-rank.rank3 { background: #f3d2b5; }
+  .fs-total { font-size: 48px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .fs-total small { font-size: 14px; color: var(--ink-soft); }
   .howto { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 62ch; }
   .slots { display: grid; gap: 8px; max-width: 480px; }
   .savecard { cursor: pointer; display: grid; grid-template-columns: auto 1fr; gap: 0 12px; align-items: baseline; text-align: left;
@@ -251,11 +258,11 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="js/sprites.js?v=13"></script>
-<script src="js/logic.js?v=13"></script>
-<script src="js/art.js?v=13"></script>
-<script src="js/ranking-config.js?v=13"></script>
-<script src="js/ranking-firebase.js?v=13"></script>
-<script src="js/main.js?v=13"></script>
+<script src="js/sprites.js?v=14"></script>
+<script src="js/logic.js?v=14"></script>
+<script src="js/art.js?v=14"></script>
+<script src="js/ranking-config.js?v=14"></script>
+<script src="js/ranking-firebase.js?v=14"></script>
+<script src="js/main.js?v=14"></script>
 
 </html>

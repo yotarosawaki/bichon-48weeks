@@ -432,6 +432,7 @@
     var sh = showSheet(
       '<h2>' + esc(S.dogName) + ' は協会に連れていかれた…</h2>' +
       '<p>第' + S.week + '週でゲームオーバー。' + reason + '</p>' +
+      statusCard(S) +
       '<div class="menu"><button class="btn primary" type="button" id="btnRetry">もういちど（同じ名前で）</button>' +
       '<button class="btn" type="button" id="btnToTitle">タイトルへ</button></div>');
     var name = S.dogName;
@@ -453,19 +454,40 @@
     resultSheet(sc);
   }
 
-  function resultSheet(sc) {
+  // 最終スコアのカード。ランキング登録のあとも表示し続ける
+  function scoreCard(st, sc) {
     var p = sc.parts;
+    return '<div class="finalscore">' +
+      '<div class="fs-head"><span class="fs-label">最終スコア</span><span class="fs-rank rank' + sc.rank.place + '">' + esc(sc.rank.label) + '</span></div>' +
+      '<div class="fs-total">' + sc.total + '<small> / 1000点</small></div>' +
+      '<div class="breakdown">' +
+      '<span>かわいさ ' + L.cute(st) + ' × 5</span><span>' + p.cute + '</span>' +
+      '<span>健康 ' + st.stats.health + ' × 2</span><span>' + p.health + '</span>' +
+      '<span>なかよし ' + st.stats.bond + ' × 2</span><span>' + p.bond + '</span>' +
+      '<span>貯金 ' + esc(yen(st.money)) + '</span><span>' + p.money + '</span></div>' +
+      '<p class="note">1年間で副業でかせいだお金：' + esc(yen(st.totalEarned || 0)) + '　／　優勝ライン ' + L.WIN_SCORE + '点</p>' +
+      '</div>';
+  }
+  function statusCard(st) {
+    return '<div class="finalscore">' +
+      '<div class="fs-head"><span class="fs-label">最終ステータス（第' + st.week + '週）</span></div>' +
+      '<div class="breakdown">' +
+      '<span>かわいさ</span><span>' + L.cute(st) + '</span>' +
+      '<span>健康</span><span>' + st.stats.health + '</span>' +
+      '<span>なかよし</span><span>' + st.stats.bond + '</span>' +
+      '<span>所持金</span><span>' + esc(yen(st.money)) + '</span>' +
+      '<span>協会の警告</span><span>' + st.warnings + ' / ' + L.MAX_WARN + '</span></div>' +
+      '<p class="note">1年間で副業でかせいだお金：' + esc(yen(st.totalEarned || 0)) + '</p>' +
+      '</div>';
+  }
+
+  function resultSheet(sc) {
     var msg = sc.rank.place === 1 ? '1年間おつかれさまでした。' + S.dogName + ' はビションフリーゼの中のビションフリーゼです！'
       : '1年間おつかれさまでした。優勝は ' + L.WIN_SCORE + '点以上。かわいさ・健康・なかよし・貯金のバランスが大事です。';
     var sh = showSheet(
-      '<h2>' + esc(S.dogName) + '：' + esc(sc.rank.label) + '（' + sc.total + '点）</h2>' +
+      '<h2>' + esc(S.dogName) + ' の1年間</h2>' +
       '<p>' + esc(msg) + '</p>' +
-      '<div class="breakdown">' +
-      '<span>かわいさ ' + L.cute(S) + ' × 5</span><span>' + p.cute + '</span>' +
-      '<span>健康 ' + S.stats.health + ' × 2</span><span>' + p.health + '</span>' +
-      '<span>なかよし ' + S.stats.bond + ' × 2</span><span>' + p.bond + '</span>' +
-      '<span>貯金 ' + esc(yen(S.money)) + '</span><span>' + p.money + '</span>' +
-      '<span class="t">合計</span><span class="t">' + sc.total + '</span></div>' +
+      scoreCard(S, sc) +
       '<div class="field"><label for="ownerName">飼い主のニックネーム（なくてもOK）</label>' +
       '<input id="ownerName" maxlength="10" autocomplete="off" placeholder="例：ビション好き"></div>' +
       '<p class="caution">ランキングはほかの人にも表示されます。本名など、個人がわかる名前は入れないでください。</p>' +
@@ -477,7 +499,7 @@
       addLocalRank(entry);
       var shared = await submitShared(entry);
       toast(shared === true ? 'みんなのランキングに登録しました' : 'この端末のランキングに登録しました');
-      rankingSheet(shared === true ? 'all' : 'local', entry);
+      rankingSheet(shared === true ? 'all' : 'local', entry, scoreCard(S, sc));
     });
     sh.querySelector('#btnToTitle').addEventListener('click', titleScreen);
   }
@@ -535,16 +557,17 @@
     });
     return h + '</tbody></table></div>';
   }
-  async function rankingSheet(tab, me) {
+  async function rankingSheet(tab, me, card) {
     tab = tab || 'all';
     var sh = showSheet(
+      (card ? '<h2>今回の結果</h2>' + card : '') +
       '<h2>ランキング</h2>' +
       '<div class="tabs" role="tablist"><button class="btn small" type="button" role="tab" id="tabAll" aria-selected="' + (tab === 'all') + '">みんな</button>' +
       '<button class="btn small" type="button" role="tab" id="tabLocal" aria-selected="' + (tab === 'local') + '">この端末</button></div>' +
       '<div id="rankBody"><p>よみこみ中…</p></div>' +
       '<div class="suggest"><button class="btn" type="button" id="btnRankBack">もどる</button></div>');
-    sh.querySelector('#tabAll').addEventListener('click', function () { rankingSheet('all', me); });
-    sh.querySelector('#tabLocal').addEventListener('click', function () { rankingSheet('local', me); });
+    sh.querySelector('#tabAll').addEventListener('click', function () { rankingSheet('all', me, card); });
+    sh.querySelector('#tabLocal').addEventListener('click', function () { rankingSheet('local', me, card); });
     sh.querySelector('#btnRankBack').addEventListener('click', function () { if (S && !S.over) showPlay(); else titleScreen(); });
     var body = sh.querySelector('#rankBody');
     if (tab === 'local') { body.innerHTML = rowsHtml(localRanks(), me); return; }
@@ -593,6 +616,7 @@
       '<li>夏（第21〜34週）はモコモコの毛で熱中症の危険。保冷グッズか、サロンのサマーカット（+2,000円・6週間）で対策を。エアコン代もかかります。</li>' +
       '<li>高額副業は22,000〜28,000円かせげるけど、翌週は疲れて犬のお世話ができません。</li>' +
       '<li>かわいさ' + L.WARN_CUTE + '未満・健康' + L.WARN_HEALTH + '未満だとビションフリーゼ協会から警告。3つで連れていかれます。4週ごとの見回りで良い状態なら警告が1つ消えます。</li>' +
+      '<li>第44週にコンテストの登録料 ' + yen(L.ENTRY_FEE) + ' がかかります。</li>' +
       '<li>48週目はコンテスト。かわいさ・健康・なかよし・貯金で採点。' + L.WIN_SCORE + '点以上で優勝！</li>' +
       '<li>毎週はじめに自動でセーブされます。</li></ul>' +
       '<div class="suggest"><button class="btn" type="button" id="btnBack">もどる</button></div>');
