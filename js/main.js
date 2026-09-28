@@ -157,8 +157,8 @@
     $('cuteNum').textContent = c;
     $('dogNameLbl').textContent = S.dogName + ' のかわいさ';
     var tag = $('cuteTag');
-    tag.textContent = L.cuteLabel(c) + (c < 45 ? '（協会に目をつけられる）' : '');
-    tag.className = 'tag ' + (c >= 80 ? 'good' : c >= 60 ? 'ok' : c >= 45 ? 'warn' : 'bad');
+    tag.textContent = L.cuteLabel(c) + (c < L.WARN_CUTE ? '（協会に目をつけられる）' : '');
+    tag.className = 'tag ' + (c >= 80 ? 'good' : c >= 65 ? 'ok' : c >= L.WARN_CUTE ? 'warn' : 'bad');
     var box = $('stats');
     if (!box.children.length) {
       STAT_DEF.forEach(function (d) {
@@ -396,7 +396,7 @@
     A.setAnim('leave', 'kyokai'); sfx('bad');
     await say('ビションフリーゼ協会の人がやってきた。\n「' + S.dogName + 'ちゃんは、しばらく協会で保護します」', 'ゲームオーバー');
     var reason = type === 'bankrupt' ? 'お金が足りなくなりました。副業とお世話のバランスが大事です。'
-      : 'お世話が足りず、警告が3つたまりました。かわいさ45未満・健康25未満で警告されます。';
+      : 'お世話が足りず、警告が3つたまりました。かわいさ' + L.WARN_CUTE + '未満・健康' + L.WARN_HEALTH + '未満で警告されます。';
     var sh = showSheet(
       '<h2>' + esc(S.dogName) + ' は協会に連れていかれた…</h2>' +
       '<p>第' + S.week + '週でゲームオーバー。' + reason + '</p>' +
@@ -424,7 +424,7 @@
   function resultSheet(sc) {
     var p = sc.parts;
     var msg = sc.rank.place === 1 ? '1年間おつかれさまでした。' + S.dogName + ' はビションフリーゼの中のビションフリーゼです！'
-      : '1年間おつかれさまでした。優勝は ' + 880 + '点以上。かわいさ・健康・なかよし・貯金のバランスが大事です。';
+      : '1年間おつかれさまでした。優勝は ' + L.WIN_SCORE + '点以上。かわいさ・健康・なかよし・貯金のバランスが大事です。';
     var sh = showSheet(
       '<h2>' + esc(S.dogName) + '：' + esc(sc.rank.label) + '（' + sc.total + '点）</h2>' +
       '<p>' + esc(msg) + '</p>' +
@@ -573,11 +573,11 @@
       '<li>ビションフリーゼは毛がのび続けます。月に1回はトリミングサロンへ（10,000円）。</li>' +
       '<li>ブラッシングをサボると毛玉地獄。毛玉が多いとサロンで追加料金。</li>' +
       '<li>おさんぽしないと健康が下がって病気に。ストレスがたまると「ビション・ブリッツ」で大暴走。</li>' +
-      '<li>毎週ごはん代4,000円。ワクチンや、毎月のフィラリア予防薬（第8〜40週）の出費も。お金がマイナスになったら破産です。</li>' +
+      '<li>毎週ごはん代' + yen(L.FOOD_COST) + '。ワクチンや、毎月のフィラリア予防薬（第8〜40週）の出費も。お金がマイナスになったら破産です。</li>' +
       '<li>夏（第21〜34週）はモコモコの毛で熱中症の危険。保冷グッズか、サロンのサマーカット（+2,000円・6週間）で対策を。エアコン代もかかります。</li>' +
       '<li>高額副業は22,000〜28,000円かせげるけど、翌週は疲れて犬のお世話ができません。</li>' +
-      '<li>かわいさ45未満・健康25未満だとビションフリーゼ協会から警告。3つで連れていかれます。4週ごとの見回りで良い状態なら警告が1つ消えます。</li>' +
-      '<li>48週目はコンテスト。かわいさ・健康・なかよし・貯金で採点。880点以上で優勝！</li>' +
+      '<li>かわいさ' + L.WARN_CUTE + '未満・健康' + L.WARN_HEALTH + '未満だとビションフリーゼ協会から警告。3つで連れていかれます。4週ごとの見回りで良い状態なら警告が1つ消えます。</li>' +
+      '<li>48週目はコンテスト。かわいさ・健康・なかよし・貯金で採点。' + L.WIN_SCORE + '点以上で優勝！</li>' +
       '<li>毎週はじめに自動でセーブされます。</li></ul>' +
       '<div class="suggest"><button class="btn" type="button" id="btnBack">もどる</button></div>');
     sh.querySelector('#btnBack').addEventListener('click', titleScreen);

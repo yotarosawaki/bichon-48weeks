@@ -4,8 +4,8 @@
 
   var TOTAL_WEEKS = 48;
   var SLOTS = 3;
-  var START_MONEY = 30000;
-  var FOOD_COST = 4000;
+  var START_MONEY = 20000;
+  var FOOD_COST = 4700;
   var SALON_COST = 10000;
   var SALON_MATS_FEE = 4000;
   var SHAMPOO_COST = 1000;
@@ -17,6 +17,9 @@
   var FILARIA_TEST_COST = 5000;
   var FILARIA_MED_COST = 1800;
   var MAX_WARN = 3;
+  var WARN_CUTE = 53;     // かわいさがこれ未満だと協会から警告
+  var WARN_HEALTH = 30;   // 健康がこれ未満だと協会から警告
+  var WIN_SCORE = 840;    // 優勝ライン
 
   var ACTIONS = [
     { id: 'walk',    label: 'おさんぽ',     cost: 0,          desc: '健康↑ ストレス↓ ちょっと汚れる' },
@@ -197,10 +200,10 @@
     // 最終週はコンテスト当日。毛がのびる前に審査を受ける
     if (s.week >= TOTAL_WEEKS) return { notes: notes, events: [] };
 
-    add(s, 'shape', -11);
+    add(s, 'shape', -12);
     add(s, 'mats', sea === 'winter' ? 24 : sea === 'rainy' ? 22 : 19);
     add(s, 'clean', sea === 'summer' ? -13 : -9);
-    add(s, 'health', -11 - (st.stress >= 80 ? 6 : 0));
+    add(s, 'health', -12 - (st.stress >= 80 ? 6 : 0));
     add(s, 'stress', 22);
     add(s, 'bond', -2);
 
@@ -248,8 +251,8 @@
   // 協会の判定。週の終わりのイベントを片付けたあとに呼ぶ
   function kyokaiCheck(s) {
     var c = cute(s), st = s.stats, out = [];
-    if (c < 45) { s.warnings++; out.push({ type: 'warn', reason: 'かわいさが ' + c + ' まで下がっています' }); }
-    if (st.health < 25) { s.warnings++; out.push({ type: 'warn', reason: '健康が ' + st.health + ' しかありません' }); }
+    if (c < WARN_CUTE) { s.warnings++; out.push({ type: 'warn', reason: 'かわいさが ' + c + ' まで下がっています' }); }
+    if (st.health < WARN_HEALTH) { s.warnings++; out.push({ type: 'warn', reason: '健康が ' + st.health + ' しかありません' }); }
     if (s.week % 4 === 0 && out.length === 0) {
       if (c >= 70 && st.health >= 60 && s.warnings > 0) { s.warnings--; out.push({ type: 'praise' }); }
       else out.push({ type: 'visit', cute: c });
@@ -432,8 +435,8 @@
     return { total: total, parts: parts, rank: contestRank(total) };
   }
   function contestRank(t) {
-    if (t >= 880) return { place: 1, label: '優勝' };
-    if (t >= 780) return { place: 2, label: '準優勝' };
+    if (t >= WIN_SCORE) return { place: 1, label: '優勝' };
+    if (t >= 760) return { place: 2, label: '準優勝' };
     if (t >= 660) return { place: 3, label: '3位' };
     if (t >= 500) return { place: 4, label: '入賞' };
     return { place: 5, label: '参加賞' };
@@ -441,7 +444,7 @@
 
   root.Logic = {
     TOTAL_WEEKS: TOTAL_WEEKS, SLOTS: SLOTS, ACTIONS: ACTIONS, EVENTS: EVENTS, CALENDAR: CALENDAR,
-    MAX_WARN: MAX_WARN, SEASON_LABEL: SEASON_LABEL, FOOD_COST: FOOD_COST,
+    MAX_WARN: MAX_WARN, WARN_CUTE: WARN_CUTE, WARN_HEALTH: WARN_HEALTH, WIN_SCORE: WIN_SCORE, START_MONEY: START_MONEY, SEASON_LABEL: SEASON_LABEL, FOOD_COST: FOOD_COST,
     expensesFor: expensesFor, canDo: canDo, SUMMER_START: 21,
     newGame: newGame, cute: cute, cuteLabel: cuteLabel, season: season, slotsFor: slotsFor,
     actionCost: actionCost, runAction: runAction, endWeek: endWeek, kyokaiCheck: kyokaiCheck,
