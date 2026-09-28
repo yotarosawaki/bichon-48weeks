@@ -39,25 +39,13 @@
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---------- おと ----------
-  var soundOn = store(SOUND_KEY) === '1', actx = null;
-  function beep(notes) {
-    if (!soundOn) return;
-    try {
-      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-      var t = actx.currentTime;
-      notes.forEach(function (n) {
-        var o = actx.createOscillator(), gn = actx.createGain();
-        o.type = 'square'; o.frequency.value = n[0];
-        gn.gain.setValueAtTime(0.05, t + n[1]); gn.gain.exponentialRampToValueAtTime(0.001, t + n[1] + n[2]);
-        o.connect(gn); gn.connect(actx.destination); o.start(t + n[1]); o.stop(t + n[1] + n[2] + 0.02);
-      });
-    } catch (e) { /* 音が出せない環境は無視 */ }
-  }
-  var SFX = {
-    ok: [[880, 0, .06]], pick: [[660, 0, .05], [990, .05, .06]], bad: [[220, 0, .15], [160, .12, .2]],
-    coin: [[988, 0, .06], [1319, .06, .12]], fan: [[523, 0, .12], [659, .12, .12], [784, .24, .12], [1047, .36, .3]]
-  };
-  function sfx(n) { beep(SFX[n] || SFX.ok); }
+  var soundOn = store(SOUND_KEY) === '1';
+  // 効果音（中身は bgm.js）。sec を渡すと、そのあいだBGMを止める
+  function sfx(n, sec) { if (soundOn) BGM.sfx(n, sec); }
+  var ACTION_SFX = { walk: 'walk', brush: 'brush', play: 'play', shampoo: 'bubbles', salon: 'salon', job: 'coin', bigjob: 'coin' };
+  var EVENT_SFX = { blitz: 'blitz', wet: 'drip', poodle: 'question', towel: 'hmm', hesoten: 'heart', stalker: 'heart', macho: 'hmm',
+    tears: 'hmm', matting: 'bad', sick: 'sick', heat: 'sick', summer: 'summer' };
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function renderSoundBtn() { $('btnSound').textContent = 'おと：' + (soundOn ? 'ON' : 'OFF'); }
   $('btnSound').addEventListener('click', function () { soundOn = !soundOn; store(SOUND_KEY, soundOn ? '1' : '0'); renderSoundBtn(); sfx('ok'); BGM.setEnabled(soundOn); });
   renderSoundBtn();
@@ -330,7 +318,7 @@
     var sh = showSheet(html), pending = null;
     var ask = sh.querySelector('#slotAsk'), yn = sh.querySelector('#slotYesNo');
     function doSave(sl) {
-      writeSlot(sl, S); save(); sfx('fan');
+      writeSlot(sl, S); save(); sfx('save');
       toast(sl.label + ' にセーブしました'); showPlay();
     }
     list.forEach(function (sl, i) {
@@ -367,14 +355,14 @@
       var id = actions[i];
       var r = L.runAction(S, id);
       var an = ACTION_ANIM[id]; A.setAnim(an[0], an[1]);
-      sfx(id === 'job' || id === 'bigjob' ? 'coin' : 'ok');
+      sfx(ACTION_SFX[id] || 'ok');
       render();
       await say(r.msg, actionLabel(id));
       for (var j = 0; j < r.events.length; j++) await runEvent(r.events[j]);
     }
 
     // 週末
-    A.setAnim('eat', 'night');
+    A.setAnim('eat', 'night'); sfx('bell');
     var wk = S.week;
     var w = L.endWeek(S);
     render();
@@ -386,10 +374,10 @@
     for (var c = 0; c < checks.length; c++) {
       var x = checks[c];
       if (x.type === 'warn') {
-        A.setAnim('front', 'kyokai'); sfx('bad');
+        A.setAnim('front', 'kyokai'); sfx('warn');
         await say('「' + x.reason + '。このままでは保護します」\n警告 ' + S.warnings + ' / ' + L.MAX_WARN, 'ビションフリーゼ協会より');
       } else if (x.type === 'praise') {
-        A.setAnim('happy', 'room'); sfx('fan');
+        A.setAnim('happy', 'room'); sfx('fanSmall', 2);
         await say('協会の人が見回りに来た。「とてもきれいにしていますね」\n警告をひとつ取り消してもらえた！', 'ビションフリーゼ協会より');
       } else {
         A.setAnim('front', 'room');
@@ -414,9 +402,9 @@
   async function weekStartNotices() {
     busy = true; renderPlan();
     var exps = L.expensesFor(S.week);
-    for (var i = 0; i < exps.length; i++) await say(exps[i].text + '\n（週末に ' + yen(exps[i].cost) + '）', '第' + S.week + '週 ' + exps[i].title);
+    for (var i = 0; i < exps.length; i++) sfx('pay'), await say(exps[i].text + '\n（週末に ' + yen(exps[i].cost) + '）', '第' + S.week + '週 ' + exps[i].title);
     if (S.week === L.SUMMER_START) { A.setAnim('side', 'park'); await runEvent('summer'); A.setAnim('idle', 'room'); }
-    if (S.tired) { A.setAnim('sleep', 'night'); await say('高額副業の疲れで、体が動かない…。今週は犬のお世話ができず、副業しかできない。', 'ヘトヘト'); A.setAnim('idle', 'room'); }
+    if (S.tired) { A.setAnim('sleep', 'night'); sfx('tired'); await say('高額副業の疲れで、体が動かない…。今週は犬のお世話ができず、副業しかできない。', 'ヘトヘト'); A.setAnim('idle', 'room'); }
     busy = false; render();
   }
 
@@ -425,12 +413,12 @@
     if (!e) return;
     var an = EVENT_SCENE[id] || EVENT_ANIM[e.anim] || ['front', 'room'];
     A.setAnim(an[0], an[1]);
-    if (id === 'blitz' || id === 'sick') sfx('bad');
+    if (EVENT_SFX[id]) sfx(EVENT_SFX[id]);
     var idx = e.choices.length > 1 ? await choose(e.title, e.text, e.choices.map(function (c) { return c.label; }))
       : (await say(e.text, e.title), 0);
     var res = L.applyChoice(S, id, idx);
     if (id === 'blitz' && idx === 0) A.setAnim('hesoten', 'room');
-    if (id === 'wet' && idx === 0) A.setAnim('happy', 'room');
+    if (id === 'wet' && idx === 0) { A.setAnim('happy', 'room'); sfx('sparkle'); }
     render();
     await say(res, e.title);
   }
@@ -441,10 +429,10 @@
     $('btnSave').hidden = true;
     $('carePanel').hidden = true;
     if (type === 'bankrupt') {
-      A.setAnim('none', 'cg:bankrupt'); sfx('bad');
+      A.setAnim('none', 'cg:bankrupt'); sfx('pay');
       await say('サイフがからっぽ…。ごはんもサロン代も払えなくなってしまった。', '破産');
     }
-    A.setAnim('none', 'cg:kyokai'); sfx('bad');
+    A.setAnim('none', 'cg:kyokai'); sfx('gameover', 3);
     await say('ビションフリーゼ協会の人がやってきた。\n「' + S.dogName + 'ちゃんは、しばらく協会で保護します」', 'ゲームオーバー');
     var reason = type === 'bankrupt' ? 'お金が足りなくなりました。副業とお世話のバランスが大事です。'
       : 'お世話が足りず、警告が3つたまりました。かわいさ' + L.WARN_CUTE + '未満・健康' + L.WARN_HEALTH + '未満で警告されます。';
@@ -467,8 +455,14 @@
     await say('ついにコンテスト当日！\n' + S.dogName + ' はステージに上がった。', 'ビションフリーゼ・コンテスト');
     var sc = L.contestScore(S);
     S.over = { type: 'clear', score: sc.total };
+    // ドラムロール → 結果発表のファンファーレ
+    busy = true;
+    sfx('drumroll', 5);
+    await say('審査員が点数をつけています…', '審査結果');
+    await wait(soundOn ? 400 : 0);
     if (sc.rank.place === 1) A.setAnim('none', 'cg:contest'); else A.setAnim(sc.rank.place <= 3 ? 'cheer' : 'happy', 'stage');
-    sfx('fan');
+    sfx(sc.rank.place <= 3 ? 'fanfare' : 'fanSmall', 3);
+    busy = false;
     await say('結果は… ' + sc.total + '点で「' + sc.rank.label + '」！', '審査結果');
     resultSheet(sc);
   }
