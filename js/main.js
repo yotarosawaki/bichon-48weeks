@@ -59,8 +59,10 @@
   };
   function sfx(n) { beep(SFX[n] || SFX.ok); }
   function renderSoundBtn() { $('btnSound').textContent = 'おと：' + (soundOn ? 'ON' : 'OFF'); }
-  $('btnSound').addEventListener('click', function () { soundOn = !soundOn; store(SOUND_KEY, soundOn ? '1' : '0'); renderSoundBtn(); sfx('ok'); });
+  $('btnSound').addEventListener('click', function () { soundOn = !soundOn; store(SOUND_KEY, soundOn ? '1' : '0'); renderSoundBtn(); sfx('ok'); BGM.setEnabled(soundOn); });
   renderSoundBtn();
+  // ブラウザは画面に触れるまで音を出せないので、最初の操作でBGMを始める
+  document.addEventListener('pointerdown', function first() { document.removeEventListener('pointerdown', first); BGM.setEnabled(soundOn); });
 
   // ---------- 描画ループ ----------
   var last = performance.now();
@@ -418,6 +420,7 @@
 
   // ---------- 終わり ----------
   async function gameOver(type) {
+    BGM.play('sad');
     store(SAVE_KEY, null);
     $('btnSave').hidden = true;
     $('carePanel').hidden = true;
@@ -584,6 +587,7 @@
     $('hud').hidden = true; $('carePanel').hidden = true; $('btnSave').hidden = true; $('btnTitle').hidden = true;
     $('dialog').hidden = true; advance = null;
     A.setAnim('none', 'cg:title');
+    BGM.play('home');
     var sv = anySave();
     var sh = showSheet(
       '<h2>ビションフリーゼと、48週間。</h2>' +
