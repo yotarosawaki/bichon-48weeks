@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ふわふわビション48週</title>
+<meta name="description" content="ビションフリーゼを48週間お世話して、コンテスト優勝をめざす育成ゲーム">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
+<style>
+  :root {
+    --ground: #dff0f1;
+    --ground-dot: #cfe6e8;
+    --panel: #fffdfb;
+    --ink: #24223a;
+    --ink-soft: #5d6180;
+    --line: #2a2c4a;
+    --pink: #f2949f;
+    --pink-deep: #d9606f;
+    --butter: #ffd86b;
+    --mint: #7fcfae;
+    --sky: #9fd3ee;
+    --warn: #f0a24a;
+    --bad: #d6465a;
+    --shadow: #b9d4d6;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background-color: var(--ground);
+    background-image: radial-gradient(var(--ground-dot) 1.5px, transparent 1.6px);
+    background-size: 14px 14px;
+    color: var(--ink);
+    font-family: "DotGothic16", "Hiragino Maru Gothic ProN", "Meiryo", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    padding-inline: 16px;
+    padding-block: 16px 32px;
+    -webkit-font-smoothing: none;
+  }
+  button, input { font: inherit; color: inherit; }
+  .wrap { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+
+  /* ドット風の枠：角を1段欠けさせる */
+  .px {
+    background: var(--panel);
+    border: 3px solid var(--line);
+    border-radius: 0;
+    box-shadow: 0 4px 0 var(--shadow);
+    clip-path: polygon(0 4px, 4px 4px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px));
+  }
+
+  header.top {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  }
+  .logo { font-size: 22px; letter-spacing: .06em; margin: 0; text-wrap: balance; }
+  .logo small { font-size: 13px; color: var(--ink-soft); letter-spacing: .1em; display: block; line-height: 1.2; }
+  .sysbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .btn {
+    cursor: pointer; background: var(--panel); border: 3px solid var(--line); padding: 6px 14px;
+    box-shadow: 0 3px 0 var(--line); transition: transform .05s; line-height: 1.4;
+  }
+  .btn:hover { background: #fff3f5; }
+  .btn:active { transform: translateY(3px); box-shadow: 0 0 0 var(--line); }
+  .btn:focus-visible, .act:focus-visible, .choice:focus-visible, input:focus-visible { outline: 3px dashed var(--pink-deep); outline-offset: 3px; }
+  .btn.primary { background: var(--pink); color: #fff; text-shadow: 1px 1px 0 var(--pink-deep); }
+  .btn.primary:hover { background: #f4a3ad; }
+  .btn.small { padding: 2px 10px; font-size: 14px; box-shadow: 0 2px 0 var(--line); }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; transform: none; }
+
+  /* ゲーム画面 */
+  .game { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .game { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; } }
+
+  .stage { position: relative; padding: 0; overflow: hidden; }
+  #scene { display: block; width: 100%; aspect-ratio: 256 / 160; image-rendering: pixelated; image-rendering: crisp-edges; background: var(--sky); }
+
+  .hud { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 12px; border-top: 3px solid var(--line); font-variant-numeric: tabular-nums; }
+  .hud b { font-weight: normal; }
+  .hud .week { font-size: 20px; }
+  .hud .money { margin-left: auto; font-size: 20px; }
+  .coin { display: inline-block; width: 12px; height: 12px; background: var(--butter); border: 2px solid #b8862b; margin-right: 4px; vertical-align: -1px; }
+  .money.low { color: var(--bad); }
+  .season { padding: 0 8px; border: 2px solid var(--line); font-size: 14px; }
+  .season.spring { background: #ffe0ea; } .season.rainy { background: #d6e4ff; } .season.summer { background: #fff1b8; }
+  .season.autumn { background: #ffd8b8; } .season.winter { background: #e8f4ff; }
+
+  .warns { display: flex; gap: 4px; align-items: center; font-size: 14px; }
+  .warns i { width: 16px; height: 12px; border: 2px solid var(--line); background: #fff; display: inline-block; position: relative; }
+  .warns i::after { content: ""; position: absolute; left: 1px; right: 1px; top: 1px; height: 4px; border-bottom: 2px solid var(--line); border-left: 2px solid transparent; border-right: 2px solid transparent; }
+  .warns i.on { background: var(--bad); }
+
+  /* 会話ウィンドウ */
+  .dialog {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; background: rgba(36,34,58,.94); color: #fff;
+    border: 3px solid #fff; outline: 3px solid var(--line); padding: 10px 14px; min-height: 72px; cursor: pointer;
+    font-size: 16px; line-height: 1.55;
+  }
+  .dialog h3 { margin: 0 0 2px; font-size: 16px; color: var(--butter); font-weight: normal; }
+  .dialog p { margin: 0; white-space: pre-line; }
+  .dialog .next { position: absolute; right: 10px; bottom: 4px; animation: bob .7s steps(2) infinite; color: var(--butter); }
+  .choices { display: grid; gap: 6px; margin-top: 8px; }
+  .choice { text-align: left; cursor: pointer; background: transparent; color: #fff; border: 2px solid #fff; padding: 4px 10px; }
+  .choice:hover, .choice:focus-visible { background: #fff; color: var(--ink); }
+  @keyframes bob { 50% { transform: translateY(3px); } }
+  @media (max-width: 520px) { .dialog { font-size: 14px; min-height: 60px; } .dialog h3 { font-size: 14px; } }
+
+  /* パラメータ */
+  .panel { padding: 12px 14px; display: grid; gap: 12px; }
+  .panel h2 { margin: 0; font-size: 16px; font-weight: normal; letter-spacing: .08em; color: var(--ink-soft); }
+  .cutebox { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; }
+  .cutebox .num { font-size: 36px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .cutebox .lbl { font-size: 14px; }
+  .tag { display: inline-block; padding: 0 8px; border: 2px solid var(--line); font-size: 14px; }
+  .tag.good { background: #d3f3e4; } .tag.ok { background: #fff3c6; } .tag.warn { background: #ffe0c2; } .tag.bad { background: #ffd2d8; }
+
+  .stats { display: grid; gap: 6px; }
+  .stat { display: grid; grid-template-columns: 9.5em 1fr 2.4em; gap: 8px; align-items: center; font-size: 14px; }
+  .stat .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar { height: 14px; border: 2px solid var(--line); background: #eef3f4; position: relative; }
+  .bar > span { position: absolute; inset: 0 auto 0 0; background: var(--mint); transition: width .4s steps(8); }
+  .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 9px, rgba(42,44,74,.25) 9px 10px); }
+  .bar.warn > span { background: var(--warn); } .bar.bad > span { background: var(--bad); }
+  .stat.flash-up .v { color: #1f8a5b; } .stat.flash-down .v { color: var(--bad); }
+  .stat .hint { color: var(--ink-soft); font-size: 11px; }
+  .stat > span:first-child { line-height: 1.25; }
+
+  /* 行動えらび */
+  .plan { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .slot { min-width: 7.5em; flex: 1 1 7.5em; border: 2px dashed var(--ink-soft); padding: 2px 8px; font-size: 14px; min-height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 6px; background: #fff; }
+  .slot.filled { border-style: solid; border-color: var(--line); background: #fff3f5; cursor: pointer; }
+  .slot.filled::after { content: "×"; color: var(--ink-soft); }
+  .slot.locked { background: repeating-linear-gradient(45deg, #eee 0 6px, #f8f8f8 6px 12px); color: var(--ink-soft); }
+  .acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  @media (max-width: 420px) { .acts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .act { cursor: pointer; background: #fff; border: 3px solid var(--line); padding: 6px 6px 4px; text-align: left; display: grid; gap: 0; box-shadow: 0 3px 0 var(--line); }
+  .act:hover { background: #fff3f5; }
+  .act:active { transform: translateY(3px); box-shadow: none; }
+  .act .n { font-size: 15px; display: flex; gap: 6px; align-items: center; }
+  .act .c { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .act .d { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+  .act[disabled] { opacity: .4; cursor: not-allowed; transform: none; box-shadow: 0 3px 0 var(--line); }
+  .ico { width: 16px; height: 16px; image-rendering: pixelated; flex: none; }
+  .go { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+  .note { font-size: 13px; color: var(--ink-soft); margin: 0; }
+
+  /* オーバーレイ画面（タイトル・名前・ランキングなど） */
+  .sheet { padding: 18px; display: grid; gap: 14px; }
+  .sheet h2 { margin: 0; font-size: 20px; font-weight: normal; text-wrap: balance; }
+  .sheet p { margin: 0; max-width: 60ch; }
+  .menu { display: grid; gap: 10px; max-width: 360px; }
+  .field { display: grid; gap: 6px; max-width: 360px; }
+  .field input { border: 3px solid var(--line); padding: 6px 10px; background: #fff; width: 100%; }
+  .caution { border: 2px solid var(--bad); background: #fff0f2; padding: 6px 10px; font-size: 14px; max-width: 60ch; }
+  .suggest { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .scoretable { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .scoretable th, .scoretable td { padding: 4px 8px; border-bottom: 2px dotted var(--shadow); text-align: left; }
+  .scoretable th { font-weight: normal; color: var(--ink-soft); font-size: 13px; }
+  .scoretable td.r { text-align: right; }
+  .scoretable tr.me td { background: #fff3c6; }
+  .tablewrap { overflow-x: auto; }
+  .tabs { display: flex; gap: 6px; }
+  .tabs .btn[aria-selected="true"] { background: var(--line); color: #fff; }
+
+  .breakdown { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; max-width: 320px; font-variant-numeric: tabular-nums; }
+  .breakdown .t { border-top: 3px solid var(--line); padding-top: 4px; font-size: 20px; }
+  .howto { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 62ch; }
+  textarea.code { width: 100%; min-height: 84px; border: 3px solid var(--line); padding: 6px; font: 12px/1.4 ui-monospace, Consolas, monospace; word-break: break-all; }
+  .toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--line); color: #fff; padding: 6px 14px; border: 2px solid #fff; z-index: 10; }
+  @media (prefers-reduced-motion: reduce) { .dialog .next { animation: none; } .bar > span { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1 class="logo"><small>BICHON FRISE 48 WEEKS</small>ふわふわビション48週</h1>
+    <div class="sysbtns">
+      <button class="btn small" id="btnSound" type="button">おと：OFF</button>
+      <button class="btn small" id="btnRank" type="button">ランキング</button>
+      <button class="btn small" id="btnSave" type="button" hidden>セーブ</button>
+      <button class="btn small" id="btnTitle" type="button" hidden>タイトルへ</button>
+    </div>
+  </header>
+
+  <div class="game">
+    <section class="stage px" aria-label="ゲーム画面">
+      <canvas id="scene" width="256" height="160"></canvas>
+      <div class="dialog" id="dialog" hidden role="dialog" aria-live="polite">
+        <h3 id="dlgTitle" hidden></h3>
+        <p id="dlgText"></p>
+        <div class="choices" id="dlgChoices"></div>
+        <span class="next" id="dlgNext" aria-hidden="true">▼</span>
+      </div>
+      <div class="hud" id="hud" hidden>
+        <span class="week" id="hudWeek"></span>
+        <span class="season" id="hudSeason"></span>
+        <span class="warns" id="hudWarns" title="ビションフリーゼ協会からの警告。3つたまると連れていかれます"></span>
+        <span class="money" id="hudMoney"></span>
+      </div>
+    </section>
+
+    <!-- お世話パネル -->
+    <section class="px panel" id="carePanel" hidden aria-label="お世話">
+      <div class="cutebox">
+        <div class="num" id="cuteNum">0</div>
+        <div>
+          <div class="lbl" id="dogNameLbl"></div>
+          <span class="tag" id="cuteTag"></span>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <h2>今週のよてい</h2>
+      <div class="plan" id="plan"></div>
+      <div class="acts" id="acts"></div>
+      <div class="go">
+        <p class="note" id="goNote"></p>
+        <button class="btn primary" id="btnGo" type="button">この週をすすめる</button>
+      </div>
+    </section>
+
+    <!-- タイトルなど -->
+    <section class="px sheet" id="sheet" aria-live="polite"></section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/sprites.js"></script>
+<script src="js/logic.js"></script>
+<script src="js/art.js"></script>
+<script src="js/ranking-config.js"></script>
+<script src="js/ranking-firebase.js"></script>
+<script src="js/main.js"></script>
+
+</html>

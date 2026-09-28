@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ランキング：だれでも読める。登録は決まった形のデータだけ。書き換え・削除はできない
+    match /scores/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['dog', 'owner', 'score', 'rank', 'cute', 'at', 'v'])
+        && request.resource.data.keys().hasAll(['dog', 'owner', 'score', 'rank', 'cute', 'at', 'v'])
+        && request.resource.data.dog is string && request.resource.data.dog.size() >= 1 && request.resource.data.dog.size() <= 8
+        && request.resource.data.owner is string && request.resource.data.owner.size() <= 10
+        && request.resource.data.score is int && request.resource.data.score >= 0 && request.resource.data.score <= 1000
+        && request.resource.data.rank in ['優勝', '準優勝', '3位', '入賞', '参加賞']
+        && request.resource.data.cute is int && request.resource.data.cute >= 0 && request.resource.data.cute <= 100
+        && request.resource.data.at is string && request.resource.data.at.size() == 10
+        && request.resource.data.v == 1;
+      allow update, delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

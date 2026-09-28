@@ -1,0 +1,598 @@
+// 画面の流れ：タイトル → 名前 → 48週 → コンテスト／ゲームオーバー
+(function () {
+  'use strict';
+  var L = window.Logic, A = window.Art;
+  var $ = function (id) { return document.getElementById(id); };
+  var cv = $('scene'), g = cv.getContext('2d');
+
+  var SAVE_KEY = 'bichon48.save', RANK_KEY = 'bichon48.rank', SOUND_KEY = 'bichon48.sound';
+  var S = null;        // ゲームの状態
+  var plan = [];       // 今週の予定
+  var busy = false;    // 週を進めている最中
+  var prevStats = null;
+
+  var STAT_DEF = [
+    { k: 'shape',  label: '毛のカタチ', good: 'high', hint: 'サロンで元通り' },
+    { k: 'mats',   label: '毛玉',       good: 'low',  hint: 'ブラッシングで減る' },
+    { k: 'clean',  label: '清潔',       good: 'high', hint: 'シャンプーで上がる' },
+    { k: 'health', label: '健康',       good: 'high', hint: 'おさんぽで上がる' },
+    { k: 'stress', label: 'ストレス',   good: 'low',  hint: 'たまるとブリッツ' },
+    { k: 'bond',   label: 'なかよし',   good: 'high', hint: 'コンテストに影響' }
+  ];
+
+  // ---------- ちいさな道具 ----------
+  function store(k, v) {
+    try {
+      if (v === undefined) return localStorage.getItem(k);
+      if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v);
+    } catch (e) { return null; }
+    return null;
+  }
+  function yen(n) { return (n < 0 ? '-' : '') + Math.abs(n).toLocaleString() + '円'; }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function cleanName(s, max) { return String(s || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max); }
+  var toastTimer;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 2200);
+  }
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- おと ----------
+  var soundOn = store(SOUND_KEY) === '1', actx = null;
+  function beep(notes) {
+    if (!soundOn) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      var t = actx.currentTime;
+      notes.forEach(function (n) {
+        var o = actx.createOscillator(), gn = actx.createGain();
+        o.type = 'square'; o.frequency.value = n[0];
+        gn.gain.setValueAtTime(0.05, t + n[1]); gn.gain.exponentialRampToValueAtTime(0.001, t + n[1] + n[2]);
+        o.connect(gn); gn.connect(actx.destination); o.start(t + n[1]); o.stop(t + n[1] + n[2] + 0.02);
+      });
+    } catch (e) { /* 音が出せない環境は無視 */ }
+  }
+  var SFX = {
+    ok: [[880, 0, .06]], pick: [[660, 0, .05], [990, .05, .06]], bad: [[220, 0, .15], [160, .12, .2]],
+    coin: [[988, 0, .06], [1319, .06, .12]], fan: [[523, 0, .12], [659, .12, .12], [784, .24, .12], [1047, .36, .3]]
+  };
+  function sfx(n) { beep(SFX[n] || SFX.ok); }
+  function renderSoundBtn() { $('btnSound').textContent = 'おと：' + (soundOn ? 'ON' : 'OFF'); }
+  $('btnSound').addEventListener('click', function () { soundOn = !soundOn; store(SOUND_KEY, soundOn ? '1' : '0'); renderSoundBtn(); sfx('ok'); });
+  renderSoundBtn();
+
+  // ---------- 描画ループ ----------
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.1, (now - last) / 1000); last = now;
+    A.anim.look = S ? A.lookOf(S) : null;
+    A.anim.season = S ? L.season(Math.min(S.week, L.TOTAL_WEEKS)) : 'spring';
+    A.drawScene(g, now / 1000, dt);
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- 会話ウィンドウ ----------
+  var advance = null, typeTimer = null;
+  function openDialog(title, text) {
+    var d = $('dialog');
+    clearInterval(typeTimer);
+    $('dlgTitle').hidden = !title; $('dlgTitle').textContent = title || '';
+    $('dlgChoices').innerHTML = '';
+    d.hidden = false;
+    var p = $('dlgText'), i = 0, done = false, timer = null;
+    p.textContent = '';
+    function finish() { clearInterval(timer); p.textContent = text; done = true; }
+    if (reduceMotion) finish();
+    else timer = typeTimer = setInterval(function () { i += 2; p.textContent = text.slice(0, i); if (i >= text.length) finish(); }, 30);
+    return { isDone: function () { return done; }, finish: finish };
+  }
+  function say(text, title) {
+    return new Promise(function (res) {
+      var tw = openDialog(title, text);
+      $('dlgNext').hidden = false;
+      advance = function () {
+        if (!tw.isDone()) { tw.finish(); return; }
+        advance = null; $('dialog').hidden = true; sfx('ok'); res();
+      };
+    });
+  }
+  function choose(title, text, labels) {
+    return new Promise(function (res) {
+      var tw = openDialog(title, text);
+      $('dlgNext').hidden = true;
+      advance = function () { if (!tw.isDone()) tw.finish(); };
+      var box = $('dlgChoices');
+      labels.forEach(function (lb, i) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'choice'; b.id = 'choice' + i; b.textContent = '▶ ' + lb;
+        b.addEventListener('click', function (e) {
+          e.stopPropagation(); advance = null; $('dialog').hidden = true; sfx('pick'); res(i);
+        });
+        box.appendChild(b);
+      });
+      setTimeout(function () { var f = box.querySelector('button'); if (f) f.focus(); }, 50);
+    });
+  }
+  $('dialog').addEventListener('click', function () { if (advance) advance(); });
+  document.addEventListener('keydown', function (e) {
+    if (!advance || $('dialog').hidden) return;
+    if ((e.key === 'Enter' || e.key === ' ') && !$('dlgChoices').children.length) { e.preventDefault(); advance(); }
+  });
+
+  // ---------- 表示 ----------
+  function renderHud() {
+    var hud = $('hud'); hud.hidden = !S;
+    if (!S) return;
+    var wk = Math.min(S.week, L.TOTAL_WEEKS), sea = L.season(wk);
+    $('hudWeek').textContent = '第' + wk + '週 / ' + L.TOTAL_WEEKS;
+    var se = $('hudSeason'); se.className = 'season ' + sea; se.textContent = L.SEASON_LABEL[sea];
+    var w = '協会の警告 ';
+    for (var i = 0; i < L.MAX_WARN; i++) w += '<i class="' + (i < S.warnings ? 'on' : '') + '"></i>';
+    $('hudWarns').innerHTML = w;
+    var m = $('hudMoney');
+    m.innerHTML = '<span class="coin"></span>' + esc(yen(S.money));
+    m.className = 'money' + (S.money < 15000 ? ' low' : '');
+  }
+
+  function barClass(def, v) {
+    if (def.good === 'high') return v < 30 ? 'bad' : v < 55 ? 'warn' : '';
+    return v > 70 ? 'bad' : v > 45 ? 'warn' : '';
+  }
+  function renderStats() {
+    if (!S) return;
+    var c = L.cute(S);
+    $('cuteNum').textContent = c;
+    $('dogNameLbl').textContent = S.dogName + ' のかわいさ';
+    var tag = $('cuteTag');
+    tag.textContent = L.cuteLabel(c) + (c < 45 ? '（協会に目をつけられる）' : '');
+    tag.className = 'tag ' + (c >= 80 ? 'good' : c >= 60 ? 'ok' : c >= 45 ? 'warn' : 'bad');
+    var box = $('stats');
+    if (!box.children.length) {
+      STAT_DEF.forEach(function (d) {
+        var row = document.createElement('div');
+        row.className = 'stat'; row.id = 'st_' + d.k;
+        row.innerHTML = '<span>' + d.label + '<br><span class="hint">' + d.hint + '</span></span><div class="bar"><span></span></div><span class="v"></span>';
+        box.appendChild(row);
+      });
+    }
+    STAT_DEF.forEach(function (d) {
+      var v = S.stats[d.k], row = $('st_' + d.k);
+      row.querySelector('.bar').className = 'bar ' + barClass(d, v);
+      row.querySelector('.bar > span').style.width = v + '%';
+      row.querySelector('.v').textContent = v;
+      if (prevStats && prevStats[d.k] !== v) {
+        var better = (v > prevStats[d.k]) === (d.good === 'high');
+        row.classList.remove('flash-up', 'flash-down'); void row.offsetWidth;
+        row.classList.add(better ? 'flash-up' : 'flash-down');
+        setTimeout(function () { row.classList.remove('flash-up', 'flash-down'); }, 1600);
+      }
+    });
+    prevStats = Object.assign({}, S.stats);
+  }
+
+  var ICON_URL = {};
+  function renderPlan() {
+    if (!S) return;
+    var n = L.slotsFor(S), box = $('plan');
+    box.innerHTML = '';
+    for (var i = 0; i < L.SLOTS; i++) {
+      var sl = document.createElement(i < plan.length ? 'button' : 'div');
+      if (i >= n) { sl.className = 'slot locked'; sl.textContent = '看病'; }
+      else if (i < plan.length) {
+        sl.type = 'button'; sl.className = 'slot filled'; sl.id = 'slot' + i;
+        sl.textContent = actionLabel(plan[i]);
+        sl.setAttribute('aria-label', actionLabel(plan[i]) + ' を取り消す');
+        sl.disabled = busy;
+        (function (k) { sl.addEventListener('click', function () { plan.splice(k, 1); sfx('ok'); renderPlan(); }); })(i);
+      } else { sl.className = 'slot'; sl.textContent = (i + 1) + 'つめ'; }
+      box.appendChild(sl);
+    }
+
+    var acts = $('acts');
+    if (!acts.children.length) {
+      L.ACTIONS.forEach(function (a) {
+        ICON_URL[a.id] = ICON_URL[a.id] || A.iconURL(a.id);
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'act'; b.id = 'act_' + a.id;
+        b.innerHTML = '<span class="n"><img class="ico" alt="" src="' + ICON_URL[a.id] + '">' + a.label + '</span><span class="c"></span><span class="d">' + a.desc + '</span>';
+        b.addEventListener('click', function () {
+          if (plan.length >= L.slotsFor(S)) return;
+          plan.push(a.id); sfx('pick'); renderPlan();
+        });
+        acts.appendChild(b);
+      });
+    }
+    var projected = projectedMoney();
+    L.ACTIONS.forEach(function (a) {
+      var b = $('act_' + a.id), cost = L.actionCost(S, a.id);
+      b.querySelector('.c').textContent = a.id === 'job' ? '+8,000〜11,000円' : cost ? yen(cost) + (a.id === 'salon' && cost > 10000 ? '（毛玉料金込み）' : '') : '0円';
+      b.disabled = busy || plan.length >= n || (a.id === 'salon' && plan.indexOf('salon') >= 0) || cost > projected;
+    });
+
+    var cal = L.CALENDAR[S.week], need = L.FOOD_COST + (cal ? cal.cost : 0);
+    var note = '週末に ' + (cal ? cal.title + '＋' : '') + 'ごはん代 ' + yen(need) + ' がかかります。';
+    if (projected < need) note = '⚠ このままだと週末にお金が足りず破産します！（' + yen(need) + ' 必要）';
+    if (S.sick) note = '看病中なので、今週できることは2つだけ。' + note;
+    var gn = $('goNote'); gn.textContent = note; gn.style.color = projected < need ? 'var(--bad)' : '';
+    $('btnGo').disabled = busy || plan.length < n;
+  }
+  function projectedMoney() {
+    var m = S.money;
+    plan.forEach(function (id) { if (id !== 'job') m -= L.actionCost(S, id); });
+    return m;
+  }
+  function actionLabel(id) { for (var i = 0; i < L.ACTIONS.length; i++) if (L.ACTIONS[i].id === id) return L.ACTIONS[i].label; return id; }
+
+  function render() { renderHud(); renderStats(); renderPlan(); }
+
+  function showPlay() {
+    $('sheet').hidden = true; $('carePanel').hidden = false;
+    $('btnSave').hidden = false; $('btnTitle').hidden = false;
+    render();
+  }
+  function showSheet(html) {
+    var sh = $('sheet');
+    sh.innerHTML = html; sh.hidden = false; $('carePanel').hidden = true;
+    return sh;
+  }
+
+  // ---------- セーブ ----------
+  function save() { if (S && !S.over) store(SAVE_KEY, JSON.stringify(S)); }
+  function validState(o) {
+    if (!o || o.v !== 1 || typeof o.dogName !== 'string' || !o.stats) return false;
+    if (typeof o.week !== 'number' || o.week < 1 || o.week > L.TOTAL_WEEKS) return false;
+    if (typeof o.money !== 'number' || !isFinite(o.money)) return false;
+    var ok = true;
+    STAT_DEF.forEach(function (d) { var v = o.stats[d.k]; if (typeof v !== 'number' || v < 0 || v > 100) ok = false; });
+    return ok && typeof o.warnings === 'number' && typeof o.rng === 'number';
+  }
+  function loadSave() {
+    try { var o = JSON.parse(store(SAVE_KEY)); return validState(o) ? o : null; } catch (e) { return null; }
+  }
+  function checksum(s) { var h = 7; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36); }
+  function makeCode() {
+    var json = JSON.stringify(S);
+    var b = btoa(unescape(encodeURIComponent(json)));
+    return 'B48-' + checksum(b) + '-' + b;
+  }
+  function readCode(code) {
+    var m = String(code).trim().replace(/\s+/g, '').match(/^B48-([0-9a-z]+)-(.+)$/);
+    if (!m || checksum(m[2]) !== m[1]) return null;
+    try { var o = JSON.parse(decodeURIComponent(escape(atob(m[2])))); return validState(o) ? o : null; } catch (e) { return null; }
+  }
+
+  function saveSheet() {
+    save();
+    var sh = showSheet(
+      '<h2>セーブしました</h2>' +
+      '<p>第' + S.week + '週のはじめから再開できます。このブラウザの「つづきから」で遊べます。</p>' +
+      '<p>別の端末やブラウザで続けたいときは、このセーブコードをコピーしておいてください。</p>' +
+      '<textarea class="code" id="saveCode" readonly></textarea>' +
+      '<div class="suggest"><button class="btn" type="button" id="btnCopy">コードをコピー</button><button class="btn primary" type="button" id="btnBack">ゲームにもどる</button></div>');
+    var ta = sh.querySelector('#saveCode'); ta.value = makeCode();
+    sh.querySelector('#btnCopy').addEventListener('click', function () {
+      var p = navigator.clipboard && navigator.clipboard.writeText(ta.value);
+      if (p) p.then(function () { toast('コピーしました'); }, function () { ta.select(); toast('選択したのでコピーしてください'); });
+      else { ta.select(); toast('選択したのでコピーしてください'); }
+    });
+    sh.querySelector('#btnBack').addEventListener('click', showPlay);
+    toast('セーブしました');
+  }
+  $('btnSave').addEventListener('click', function () { if (S && !busy) saveSheet(); });
+  $('btnTitle').addEventListener('click', function () { if (!busy) { save(); titleScreen(); } });
+
+  // ---------- 週の進行 ----------
+  var ACTION_ANIM = { walk: ['walk', 'park'], brush: ['brush', 'room'], play: ['play', 'room'], shampoo: ['shampoo', 'bath'], salon: ['salon', 'salon'], job: ['job', 'desk'] };
+  var EVENT_ANIM = { blitz: ['blitz', 'room'], wet: ['wet', 'bath'], side: ['side', 'park'], sleep: ['sleep', 'room'], front: ['front', 'room'], happy: ['happy', 'room'], sick: ['sick', 'vet'] };
+
+  $('btnGo').addEventListener('click', function () { if (!busy && plan.length === L.slotsFor(S)) runWeek(); });
+
+  async function runWeek() {
+    busy = true; render();
+    var actions = plan.slice(); plan = [];
+    for (var i = 0; i < actions.length; i++) {
+      var id = actions[i];
+      var r = L.runAction(S, id);
+      var an = ACTION_ANIM[id]; A.setAnim(an[0], an[1]);
+      sfx(id === 'job' ? 'coin' : 'ok');
+      render();
+      await say(r.msg, actionLabel(id));
+      for (var j = 0; j < r.events.length; j++) await runEvent(r.events[j]);
+    }
+
+    // 週末
+    A.setAnim('eat', 'night');
+    var wk = S.week;
+    var w = L.endWeek(S);
+    render();
+    await say('第' + wk + '週のおわり。\n' + w.notes.join('\n'), '週のまとめ');
+    for (var k = 0; k < w.events.length; k++) await runEvent(w.events[k]);
+
+    var checks = S.week >= L.TOTAL_WEEKS ? [] : L.kyokaiCheck(S);
+    render();
+    for (var c = 0; c < checks.length; c++) {
+      var x = checks[c];
+      if (x.type === 'warn') {
+        A.setAnim('front', 'kyokai'); sfx('bad');
+        await say('「' + x.reason + '。このままでは保護します」\n警告 ' + S.warnings + ' / ' + L.MAX_WARN, 'ビションフリーゼ協会より');
+      } else if (x.type === 'praise') {
+        A.setAnim('happy', 'room'); sfx('fan');
+        await say('協会の人が見回りに来た。「とてもきれいにしていますね」\n警告をひとつ取り消してもらえた！', 'ビションフリーゼ協会より');
+      } else {
+        A.setAnim('front', 'room');
+        await say('協会の人が見回りに来た。「かわいさ ' + x.cute + '…引き続きよろしくお願いします」', 'ビションフリーゼ協会より');
+      }
+    }
+
+    var over = L.checkOver(S);
+    if (over) { busy = false; return gameOver(over.type); }
+    if (S.week >= L.TOTAL_WEEKS) { busy = false; return contest(); }
+
+    L.nextWeek(S);
+    save();
+    busy = false;
+    A.setAnim('idle', 'room');
+    render();
+    var cal = L.CALENDAR[S.week];
+    if (cal) await say(cal.text + '\n（週末に ' + yen(cal.cost) + '）', '第' + S.week + '週 ' + cal.title);
+    if (S.week === L.TOTAL_WEEKS) await say('来週はいよいよコンテスト！今週が最後の準備です。サロンに行くなら今。', 'コンテスト直前');
+  }
+
+  async function runEvent(id) {
+    var e = L.EVENTS[id];
+    if (!e) return;
+    var an = id === 'hesoten' ? ['hesoten', 'room'] : EVENT_ANIM[e.anim] || ['front', 'room'];
+    A.setAnim(an[0], an[1]);
+    if (id === 'blitz' || id === 'sick') sfx('bad');
+    var idx = e.choices.length > 1 ? await choose(e.title, e.text, e.choices.map(function (c) { return c.label; }))
+      : (await say(e.text, e.title), 0);
+    var res = L.applyChoice(S, id, idx);
+    if (id === 'blitz' && idx === 0) A.setAnim('hesoten', 'room');
+    if (id === 'wet' && idx === 0) A.setAnim('happy', 'room');
+    render();
+    await say(res, e.title);
+  }
+
+  // ---------- 終わり ----------
+  async function gameOver(type) {
+    store(SAVE_KEY, null);
+    $('btnSave').hidden = true;
+    $('carePanel').hidden = true;
+    if (type === 'bankrupt') {
+      A.setAnim('front', 'night'); sfx('bad');
+      await say('サイフがからっぽ…。ごはんもサロン代も払えなくなってしまった。', '破産');
+    }
+    A.setAnim('leave', 'kyokai'); sfx('bad');
+    await say('ビションフリーゼ協会の人がやってきた。\n「' + S.dogName + 'ちゃんは、しばらく協会で保護します」', 'ゲームオーバー');
+    var reason = type === 'bankrupt' ? 'お金が足りなくなりました。副業とお世話のバランスが大事です。'
+      : 'お世話が足りず、警告が3つたまりました。かわいさ45未満・健康25未満で警告されます。';
+    var sh = showSheet(
+      '<h2>' + esc(S.dogName) + ' は協会に連れていかれた…</h2>' +
+      '<p>第' + S.week + '週でゲームオーバー。' + reason + '</p>' +
+      '<div class="menu"><button class="btn primary" type="button" id="btnRetry">もういちど（同じ名前で）</button>' +
+      '<button class="btn" type="button" id="btnToTitle">タイトルへ</button></div>');
+    var name = S.dogName;
+    sh.querySelector('#btnRetry').addEventListener('click', function () { startNew(name); });
+    sh.querySelector('#btnToTitle').addEventListener('click', titleScreen);
+  }
+
+  async function contest() {
+    store(SAVE_KEY, null);
+    $('btnSave').hidden = true;
+    $('carePanel').hidden = true;
+    A.setAnim('front', 'stage');
+    await say('ついにコンテスト当日！\n' + S.dogName + ' はステージに上がった。', 'ビションフリーゼ・コンテスト');
+    var sc = L.contestScore(S);
+    S.over = { type: 'clear', score: sc.total };
+    A.setAnim(sc.rank.place <= 3 ? 'cheer' : 'happy', 'stage');
+    sfx('fan');
+    await say('結果は… ' + sc.total + '点で「' + sc.rank.label + '」！', '審査結果');
+    resultSheet(sc);
+  }
+
+  function resultSheet(sc) {
+    var p = sc.parts;
+    var msg = sc.rank.place === 1 ? '1年間おつかれさまでした。' + S.dogName + ' はビションフリーゼの中のビションフリーゼです！'
+      : '1年間おつかれさまでした。優勝は ' + 880 + '点以上。かわいさ・健康・なかよし・貯金のバランスが大事です。';
+    var sh = showSheet(
+      '<h2>' + esc(S.dogName) + '：' + esc(sc.rank.label) + '（' + sc.total + '点）</h2>' +
+      '<p>' + esc(msg) + '</p>' +
+      '<div class="breakdown">' +
+      '<span>かわいさ ' + L.cute(S) + ' × 5</span><span>' + p.cute + '</span>' +
+      '<span>健康 ' + S.stats.health + ' × 2</span><span>' + p.health + '</span>' +
+      '<span>なかよし ' + S.stats.bond + ' × 2</span><span>' + p.bond + '</span>' +
+      '<span>貯金 ' + esc(yen(S.money)) + '</span><span>' + p.money + '</span>' +
+      '<span class="t">合計</span><span class="t">' + sc.total + '</span></div>' +
+      '<div class="field"><label for="ownerName">飼い主のニックネーム（なくてもOK）</label>' +
+      '<input id="ownerName" maxlength="10" autocomplete="off" placeholder="例：ビション好き"></div>' +
+      '<p class="caution">ランキングはほかの人にも表示されます。本名など、個人がわかる名前は入れないでください。</p>' +
+      '<div class="suggest"><button class="btn primary" type="button" id="btnSubmit">ランキングに登録</button>' +
+      '<button class="btn" type="button" id="btnToTitle">タイトルへ</button></div>');
+    sh.querySelector('#btnSubmit').addEventListener('click', async function (e) {
+      var btn = e.currentTarget; btn.disabled = true;
+      var entry = { dog: S.dogName, owner: cleanName(sh.querySelector('#ownerName').value, 10), score: sc.total, rank: sc.rank.label, cute: L.cute(S), at: new Date().toISOString().slice(0, 10), v: 1 };
+      addLocalRank(entry);
+      var shared = await submitShared(entry);
+      toast(shared === true ? 'みんなのランキングに登録しました' : 'この端末のランキングに登録しました');
+      rankingSheet(shared === true ? 'all' : 'local', entry);
+    });
+    sh.querySelector('#btnToTitle').addEventListener('click', titleScreen);
+  }
+
+  // ---------- ランキング ----------
+  var dbPromise = null;
+  function getDb() {
+    if (!dbPromise) {
+      dbPromise = (window.claude && typeof window.claude.use === 'function')
+        ? window.claude.use('db').catch(function () { return null; }) : Promise.resolve(null);
+    }
+    return dbPromise;
+  }
+  function localRanks() { try { var a = JSON.parse(store(RANK_KEY)); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function addLocalRank(entry) {
+    var a = localRanks(); a.push(entry);
+    a.sort(function (x, y) { return y.score - x.score; });
+    store(RANK_KEY, JSON.stringify(a.slice(0, 20)));
+  }
+  var sharedError = '';
+  async function submitShared(entry) {
+    var db = await getDb();
+    if (!db && window.FirebaseRanking) {
+      try { await window.FirebaseRanking.add(entry); return true; }
+      catch (e) { toast('みんなのランキングに登録できませんでした。時間をおいてもう一度お試しください。'); return false; }
+    }
+    if (!db) return false;
+    try { await db.collection('scores').add(entry); return true; }
+    catch (e) {
+      sharedError = e && e.code === 'invalid_argument' ? 'このページでは閲覧のみのため、みんなのランキングに登録できませんでした。'
+        : e && e.code === 'quota_exceeded' ? 'ランキングがいっぱいで登録できませんでした。'
+        : 'みんなのランキングに登録できませんでした。時間をおいてもう一度お試しください。';
+      toast(sharedError);
+      return false;
+    }
+  }
+  async function fetchShared() {
+    var db = await getDb();
+    if (!db && window.FirebaseRanking) {
+      try { return await window.FirebaseRanking.top(50); } catch (e) { return null; }
+    }
+    if (!db) return null;
+    try {
+      var snap = await db.collection('scores').orderBy('score', 'desc').limit(50).get();
+      return snap.docs.map(function (d) { return d.data(); });
+    } catch (e) { return null; }
+  }
+  function rowsHtml(rows, me) {
+    if (!rows.length) return '<p>まだ記録がありません。最初の優勝をめざそう！</p>';
+    var h = '<div class="tablewrap"><table class="scoretable"><thead><tr><th>順位</th><th>犬の名前</th><th>飼い主</th><th>結果</th><th class="r">点数</th></tr></thead><tbody>';
+    rows.forEach(function (r, i) {
+      var score = Math.max(0, Math.min(1000, Math.round(Number(r.score) || 0)));
+      var isMe = me && r.dog === me.dog && r.score === me.score && r.at === me.at;
+      h += '<tr' + (isMe ? ' class="me"' : '') + '><td>' + (i + 1) + '</td><td>' + esc(cleanName(r.dog, 8)) + '</td><td>' + esc(cleanName(r.owner, 10) || '—') + '</td><td>' + esc(cleanName(r.rank, 4)) + '</td><td class="r">' + score + '</td></tr>';
+    });
+    return h + '</tbody></table></div>';
+  }
+  async function rankingSheet(tab, me) {
+    tab = tab || 'all';
+    var sh = showSheet(
+      '<h2>ランキング</h2>' +
+      '<div class="tabs" role="tablist"><button class="btn small" type="button" role="tab" id="tabAll" aria-selected="' + (tab === 'all') + '">みんな</button>' +
+      '<button class="btn small" type="button" role="tab" id="tabLocal" aria-selected="' + (tab === 'local') + '">この端末</button></div>' +
+      '<div id="rankBody"><p>よみこみ中…</p></div>' +
+      '<div class="suggest"><button class="btn" type="button" id="btnRankBack">もどる</button></div>');
+    sh.querySelector('#tabAll').addEventListener('click', function () { rankingSheet('all', me); });
+    sh.querySelector('#tabLocal').addEventListener('click', function () { rankingSheet('local', me); });
+    sh.querySelector('#btnRankBack').addEventListener('click', function () { if (S && !S.over) showPlay(); else titleScreen(); });
+    var body = sh.querySelector('#rankBody');
+    if (tab === 'local') { body.innerHTML = rowsHtml(localRanks(), me); return; }
+    var rows = await fetchShared();
+    if (!body.isConnected) return;
+    body.innerHTML = rows ? rowsHtml(rows, me)
+      : '<p>みんなのランキングは、このページではまだ使えません。「この端末」タブで自分の記録を見られます。</p>';
+  }
+  $('btnRank').addEventListener('click', function () { if (!busy) rankingSheet('all'); });
+
+  // ---------- タイトル・はじめかた ----------
+  function titleScreen() {
+    S = null; plan = []; prevStats = null;
+    $('hud').hidden = true; $('carePanel').hidden = true; $('btnSave').hidden = true; $('btnTitle').hidden = true;
+    $('dialog').hidden = true; advance = null;
+    A.setAnim('title', 'title');
+    var sv = loadSave();
+    var sh = showSheet(
+      '<h2>ビションフリーゼと、48週間。</h2>' +
+      '<p>毎週「お世話」か「副業」を選んで、ふわふわのまま1年間くらそう。サボるとモコモコ、お金を使いすぎると破産、かわいくないと協会に連れていかれます。</p>' +
+      '<div class="menu">' +
+      '<button class="btn primary" type="button" id="btnNew">はじめから</button>' +
+      (sv ? '<button class="btn" type="button" id="btnCont">つづきから（' + esc(sv.dogName) + '・第' + sv.week + '週）</button>' : '') +
+      '<button class="btn" type="button" id="btnCode">セーブコードで再開</button>' +
+      '<button class="btn" type="button" id="btnHow">あそびかた</button></div>');
+    sh.querySelector('#btnNew').addEventListener('click', nameSheet);
+    if (sv) sh.querySelector('#btnCont').addEventListener('click', function () { S = sv; resume(); });
+    sh.querySelector('#btnCode').addEventListener('click', codeSheet);
+    sh.querySelector('#btnHow').addEventListener('click', howSheet);
+  }
+
+  function resume() {
+    prevStats = null; plan = [];
+    A.setAnim('idle', 'room');
+    showPlay();
+    say('おかえりなさい。第' + S.week + '週のはじめから再開します。', S.dogName);
+  }
+
+  function codeSheet() {
+    var sh = showSheet(
+      '<h2>セーブコードで再開</h2>' +
+      '<div class="field"><label for="codeIn">セーブコード</label><textarea class="code" id="codeIn" placeholder="B48-..."></textarea></div>' +
+      '<p id="codeErr" class="caution" hidden></p>' +
+      '<div class="suggest"><button class="btn primary" type="button" id="btnLoadCode">再開する</button><button class="btn" type="button" id="btnBack">もどる</button></div>');
+    sh.querySelector('#btnLoadCode').addEventListener('click', function () {
+      var o = readCode(sh.querySelector('#codeIn').value);
+      if (!o) { var er = sh.querySelector('#codeErr'); er.hidden = false; er.textContent = 'コードが読めませんでした。最初の「B48-」から最後まで、まるごと貼り付けてください。'; return; }
+      S = o; save(); resume();
+    });
+    sh.querySelector('#btnBack').addEventListener('click', titleScreen);
+  }
+
+  function howSheet() {
+    var sh = showSheet(
+      '<h2>あそびかた</h2>' +
+      '<ul class="howto">' +
+      '<li>1週間にできることは3つ。お世話と副業から選んで「この週をすすめる」。</li>' +
+      '<li>ビションフリーゼは毛がのび続けます。月に1回はトリミングサロンへ（10,000円）。</li>' +
+      '<li>ブラッシングをサボると毛玉地獄。毛玉が多いとサロンで追加料金。</li>' +
+      '<li>おさんぽしないと健康が下がって病気に。ストレスがたまると「ビション・ブリッツ」で大暴走。</li>' +
+      '<li>毎週ごはん代4,000円。季節ごとにワクチンや予防薬の出費も。お金がマイナスになったら破産です。</li>' +
+      '<li>かわいさ45未満・健康25未満だとビションフリーゼ協会から警告。3つで連れていかれます。4週ごとの見回りで良い状態なら警告が1つ消えます。</li>' +
+      '<li>48週目はコンテスト。かわいさ・健康・なかよし・貯金で採点。880点以上で優勝！</li>' +
+      '<li>毎週はじめに自動でセーブされます。</li></ul>' +
+      '<div class="suggest"><button class="btn" type="button" id="btnBack">もどる</button></div>');
+    sh.querySelector('#btnBack').addEventListener('click', titleScreen);
+  }
+
+  var NAME_IDEAS = ['マシュマロ', 'わたあめ', 'ポポ', 'ミルク', 'コットン', 'ぷりん'];
+  function nameSheet() {
+    A.setAnim('front', 'room');
+    var sh = showSheet(
+      '<h2>この子の名前は？</h2>' +
+      '<div class="field"><label for="dogName">犬の名前（8文字まで）</label>' +
+      '<input id="dogName" maxlength="8" autocomplete="off" value=""></div>' +
+      '<div class="suggest" aria-label="名前の例">' + NAME_IDEAS.map(function (n) { return '<button class="btn small" type="button" data-n="' + n + '">' + n + '</button>'; }).join('') + '</div>' +
+      '<p class="caution">名前はランキングでほかの人にも表示されます。飼い主さんの本名など、個人がわかる言葉は入れないでください。</p>' +
+      '<p id="nameErr" class="caution" hidden>名前を入れてください。</p>' +
+      '<div class="suggest"><button class="btn primary" type="button" id="btnStart">この名前ではじめる</button><button class="btn" type="button" id="btnBack">もどる</button></div>');
+    var input = sh.querySelector('#dogName');
+    sh.querySelectorAll('[data-n]').forEach(function (b) { b.addEventListener('click', function () { input.value = b.dataset.n; input.focus(); }); });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') sh.querySelector('#btnStart').click(); });
+    sh.querySelector('#btnStart').addEventListener('click', function () {
+      var n = cleanName(input.value, 8);
+      if (!n) { sh.querySelector('#nameErr').hidden = false; input.focus(); return; }
+      startNew(n);
+    });
+    sh.querySelector('#btnBack').addEventListener('click', titleScreen);
+    setTimeout(function () { input.focus(); }, 50);
+  }
+
+  async function startNew(name) {
+    S = L.newGame(name, (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
+    plan = []; prevStats = null;
+    save();
+    A.setAnim('happy', 'room');
+    showPlay();
+    busy = true; renderPlan();
+    await say('今日から ' + name + ' との生活がはじまる！', 'はじまり');
+    A.setAnim('front', 'room');
+    await say('ビションフリーゼは毛がのび続ける犬種。\n月1回のサロン、こまめなブラッシング、毎週のおさんぽが欠かせない。', 'はじまり');
+    await say('手持ちは ' + yen(S.money) + '。足りなくなったら副業でかせごう。\n目標は48週目のコンテストで優勝！', 'はじまり');
+    busy = false;
+    A.setAnim('idle', 'room');
+    render();
+  }
+
+  // ---------- 起動 ----------
+  A.load().then(function () {
+    requestAnimationFrame(frame);
+    titleScreen();
+  });
+})();
