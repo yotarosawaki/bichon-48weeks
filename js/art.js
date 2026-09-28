@@ -453,7 +453,7 @@
   };
   function iconURL(id) {
     var c = document.createElement('canvas'); c.width = 16; c.height = 16;
-    pattern(c.getContext('2d'), ICONS[id], 0, 0, { '#': '#2a2c4a', o: '#f2949f', b: '#9fd3ee' });
+    pattern(c.getContext('2d'), ICONS[id] || ICONS[id === 'bigjob' ? 'job' : 'walk'], 0, 0, { '#': '#2a2c4a', o: '#f2949f', b: '#9fd3ee' });
     return c.toDataURL();
   }
 

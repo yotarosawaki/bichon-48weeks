@@ -107,6 +107,9 @@
   .choices { display: grid; gap: 6px; margin-top: 8px; }
   .choice { text-align: left; cursor: pointer; background: transparent; color: #fff; border: 2px solid #fff; padding: 4px 10px; }
   .choice:hover, .choice:focus-visible { background: #fff; color: var(--ink); }
+  .choice[aria-pressed="true"] { background: var(--butter); color: var(--ink); border-color: var(--butter); }
+  .choice.confirm { background: var(--pink); border-color: #fff; text-align: center; margin-top: 4px; }
+  .choice.confirm:hover, .choice.confirm:focus-visible { background: #f4a3ad; color: #fff; }
   @keyframes bob { 50% { transform: translateY(3px); } }
   @media (max-width: 520px) { .dialog { font-size: 14px; min-height: 60px; } .dialog h3 { font-size: 14px; } }
 
@@ -144,6 +147,7 @@
   .act .n { font-size: 15px; display: flex; gap: 6px; align-items: center; }
   .act .c { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
   .act .d { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+  .act:last-child:nth-child(3n+1) { grid-column: 1 / -1; }
   .act[disabled] { opacity: .4; cursor: not-allowed; transform: none; box-shadow: 0 3px 0 var(--line); }
   .ico { width: 16px; height: 16px; image-rendering: pixelated; flex: none; }
   .go { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
@@ -229,11 +233,11 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="js/sprites.js?v=2"></script>
-<script src="js/logic.js?v=2"></script>
-<script src="js/art.js?v=2"></script>
-<script src="js/ranking-config.js?v=2"></script>
-<script src="js/ranking-firebase.js?v=2"></script>
-<script src="js/main.js?v=2"></script>
+<script src="js/sprites.js?v=3"></script>
+<script src="js/logic.js?v=3"></script>
+<script src="js/art.js?v=3"></script>
+<script src="js/ranking-config.js?v=3"></script>
+<script src="js/ranking-firebase.js?v=3"></script>
+<script src="js/main.js?v=3"></script>
 
 </html>

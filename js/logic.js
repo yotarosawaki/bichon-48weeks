@@ -10,6 +10,12 @@
   var SALON_MATS_FEE = 4000;
   var SHAMPOO_COST = 1000;
   var VET_COST = 15000;
+  var SUMMER_CUT_FEE = 2000;
+  var COOL_GOODS_COST = 4000;
+  var AIRCON_COST = 1000;
+  var HEAT_VET_COST = 20000;
+  var FILARIA_TEST_COST = 5000;
+  var FILARIA_MED_COST = 1800;
   var MAX_WARN = 3;
 
   var ACTIONS = [
@@ -17,18 +23,27 @@
     { id: 'brush',   label: 'ブラッシング', cost: 0,          desc: '毛玉↓ なかよし↑' },
     { id: 'play',    label: 'あそぶ',       cost: 0,          desc: 'ストレス↓ なかよし↑' },
     { id: 'shampoo', label: 'シャンプー', cost: SHAMPOO_COST, desc: 'おうちで。清潔↑ 毛は絡みやすい' },
-    { id: 'salon',   label: 'サロン', cost: SALON_COST, desc: 'トリミングで形が元通り。毛玉が多いと追加料金' },
-    { id: 'job',     label: '副業',         cost: 0,          desc: 'お金を稼ぐ。そのあいだ犬はさみしい' }
+    { id: 'salon',   label: 'サロン', cost: SALON_COST, desc: 'トリミングで形が元通り。夏はサマーカット' },
+    { id: 'job',     label: '副業',         cost: 0,          desc: 'お金を稼ぐ。そのあいだ犬はさみしい' },
+    { id: 'bigjob',  label: '高額副業',     cost: 0,          desc: 'がっつり稼ぐ。疲れて翌週はお世話できない' }
   ];
 
   // 1年の季節と、その週に決まって起こる出費
   var CALENDAR = {
     6:  { title: '狂犬病ワクチン', cost: 3500, text: '年に1回の狂犬病ワクチン。法律で決まっています。' },
     10: { title: '混合ワクチン', cost: 8000, text: '混合ワクチンの季節。病院はちょっと苦手。' },
-    16: { title: 'フィラリア予防', cost: 6000, text: '蚊の季節に向けて、フィラリアの検査と予防薬。' },
     30: { title: 'ノミ・ダニ予防', cost: 4000, text: '夏の草むらはノミやダニがいっぱい。予防薬を買いました。' },
     40: { title: '健康診断', cost: 7000, text: 'コンテスト前の健康診断。問題なし！' }
   };
+
+  // その週に払う決まった出費（週末に引かれる）
+  function expensesFor(week) {
+    var list = [];
+    if (CALENDAR[week]) list.push(CALENDAR[week]);
+    if (week === 8) list.push({ title: 'フィラリア検査', cost: FILARIA_TEST_COST, text: '蚊の季節の前に、フィラリアにかかっていないか血液検査。' });
+    if (week >= 8 && week <= 40 && week % 4 === 0) list.push({ title: 'フィラリア予防薬', cost: FILARIA_MED_COST, text: '月に1回のフィラリアのお薬。蚊がいる季節は毎月欠かせない。' });
+    return list;
+  }
 
   function season(week) {
     if (week <= 8) return 'spring';
@@ -61,6 +76,10 @@
       sick: false,
       rng: (seed >>> 0) || 1,
       over: null,
+      tired: false,       // 高額副業の疲れで、今週はお世話できない
+      tiredNext: false,
+      cool: false,        // 保冷グッズを持っている
+      summerCutUntil: 0,  // この週までサマーカットで涼しい
       totalEarned: 0,
       log: []
     };
@@ -80,8 +99,15 @@
 
   function slotsFor(s) { return s.sick ? SLOTS - 1 : SLOTS; }
 
+  var CARE = { walk: 1, brush: 1, play: 1, shampoo: 1, salon: 1 };
+  // その行動が今週えらべるか（お金以外の理由）
+  function canDo(s, id) {
+    if (s.tired && (CARE[id] || id === 'bigjob')) return false;
+    return true;
+  }
+
   function actionCost(s, id) {
-    if (id === 'salon') return SALON_COST + (s.stats.mats >= 60 ? SALON_MATS_FEE : 0);
+    if (id === 'salon') return SALON_COST + (s.stats.mats >= 60 ? SALON_MATS_FEE : 0) + (season(s.week) === 'summer' ? SUMMER_CUT_FEE : 0);
     for (var i = 0; i < ACTIONS.length; i++) if (ACTIONS[i].id === id) return ACTIONS[i].cost;
     return 0;
   }
@@ -125,12 +151,16 @@
         if (rand(s) < 0.45) ev.push('blitz');
         break;
       case 'salon':
-        var fee = cost > SALON_COST;
+        var fee = s.stats.mats >= 60;
         st.shape = 100;
         st.mats = 0;
         st.clean = Math.max(st.clean, 92);
         add(s, 'stress', 12);
         msg = fee ? '毛玉がひどくて追加料金をとられた…でもまんまるに戻った！' : 'まんまるのパウダーパフカット！トリマーさんにほめられた。';
+        if (sea === 'summer') {
+          s.summerCutUntil = s.week + 5;
+          msg = (fee ? '毛玉の追加料金もとられたけど、' : '') + 'すっきりサマーカット！これで6週間は暑さも平気。';
+        }
         if (rand(s) < 0.35) ev.push('blitz');
         break;
       case 'job':
@@ -140,6 +170,16 @@
         add(s, 'bond', -2);
         add(s, 'stress', 8);
         msg = '副業で ' + earn.toLocaleString() + '円 かせいだ。ドアの前でずっと待っていたらしい。';
+        break;
+      case 'bigjob':
+        var big = randInt(s, 22, 28) * 1000;
+        s.money += big;
+        s.totalEarned += big;
+        s.tiredNext = true;
+        add(s, 'bond', -5);
+        add(s, 'stress', 15);
+        msg = '徹夜で高額副業！' + big.toLocaleString() + '円 かせいだ。…でもヘトヘトで、来週は犬のお世話どころじゃない。';
+        anim = 'job';
         break;
     }
     return { msg: msg, anim: anim, events: ev };
@@ -151,8 +191,8 @@
 
     s.money -= FOOD_COST;
     notes.push('ごはん・消耗品代 -' + FOOD_COST.toLocaleString() + '円');
-    var cal = CALENDAR[s.week];
-    if (cal) { s.money -= cal.cost; notes.push(cal.title + ' -' + cal.cost.toLocaleString() + '円'); }
+    expensesFor(s.week).forEach(function (x) { s.money -= x.cost; notes.push(x.title + ' -' + x.cost.toLocaleString() + '円'); });
+    if (sea === 'summer') { s.money -= AIRCON_COST; notes.push('エアコン代 -' + AIRCON_COST.toLocaleString() + '円'); }
 
     // 最終週はコンテスト当日。毛がのびる前に審査を受ける
     if (s.week >= TOTAL_WEEKS) return { notes: notes, events: [] };
@@ -163,6 +203,18 @@
     add(s, 'health', -11 - (st.stress >= 80 ? 6 : 0));
     add(s, 'stress', 22);
     add(s, 'bond', -2);
+
+    // 夏の暑さ。白いモコモコの毛は熱がこもる
+    if (sea === 'summer') {
+      if (s.summerCutUntil >= s.week) notes.push('サマーカットで涼しそう');
+      else {
+        var f = s.cool ? 0.5 : 1;
+        add(s, 'health', -8 * f);
+        add(s, 'stress', 12 * f);
+        notes.push(s.cool ? '保冷グッズでなんとか暑さをしのいだ' : '暑さでぐったり…');
+        if (rand(s) < (s.cool ? 0.08 : 0.3)) ev.push('heat');
+      }
+    }
 
     // 毛玉がひどいと皮膚トラブルで健康にも響く
     if (st.mats >= 80) { add(s, 'health', -6); notes.push('毛玉で皮膚がかゆそう'); }
@@ -213,7 +265,12 @@
     return s.over;
   }
 
-  function nextWeek(s) { s.week++; return checkOver(s); }
+  function nextWeek(s) {
+    s.week++;
+    s.tired = !!s.tiredNext;
+    s.tiredNext = false;
+    return checkOver(s);
+  }
 
   // --- イベント定義。選択肢の効果は状態を書き換えて結果の文を返す ---
   var EVENTS = {
@@ -315,6 +372,35 @@
         { label: '次のサロンで…', fx: function (s) { add(s, 'mats', 8); return '毛玉がさらに育ってしまった。'; } }
       ]
     },
+    summer: {
+      title: '夏がきた！',
+      text: 'ビションフリーゼの白いモコモコは、夏はまるで毛皮のコート。暑さ対策をしないと熱中症の危険も。',
+      anim: 'side',
+      choices: [
+        { label: '保冷グッズを買う（' + COOL_GOODS_COST.toLocaleString() + '円）', fx: function (s) {
+          if (s.money < COOL_GOODS_COST) return 'お金が足りなくて買えなかった…。夏のサロンでサマーカットにする手もある。';
+          s.money -= COOL_GOODS_COST; s.cool = true;
+          return '保冷剤ベストとひんやりマットを買った。夏のあいだ、暑さのダメージが半分になる。'; } },
+        { label: 'サロンでサマーカットにする', fx: function () {
+          return '夏のサロンはサマーカット（+' + SUMMER_CUT_FEE.toLocaleString() + '円）。カットから6週間は暑さを気にしなくていい。'; } },
+        { label: '気合いで乗り切る', fx: function () {
+          return 'エアコンだけでがんばる。…ほんとうに大丈夫？'; } }
+      ]
+    },
+    heat: {
+      title: '熱中症！',
+      text: 'ハァハァと息が荒く、ぐったりしている。モコモコの毛に熱がこもってしまった！',
+      anim: 'sick',
+      choices: [
+        { label: 'すぐ病院へ（' + HEAT_VET_COST.toLocaleString() + '円）', fx: function (s) {
+          s.money -= HEAT_VET_COST; add(s, 'health', 10);
+          return '点滴をしてもらって、なんとか元気になった。'; } },
+        { label: '体を冷やして様子を見る', fx: function (s) {
+          if (rand(s) < 0.5) { add(s, 'health', -25); s.sick = true; s.money -= 8000;
+            return '悪化してしまい、結局病院へ。通院代 8,000円。来週は看病が必要。'; }
+          add(s, 'health', -8); return '保冷剤で冷やしたら、なんとか落ち着いた。ヒヤッとした…'; } }
+      ]
+    },
     sick: {
       title: 'ぐったり…',
       text: '元気がなく、ごはんも残している。運動不足で体力が落ちていたのかも。動物病院へ。',
@@ -356,6 +442,7 @@
   root.Logic = {
     TOTAL_WEEKS: TOTAL_WEEKS, SLOTS: SLOTS, ACTIONS: ACTIONS, EVENTS: EVENTS, CALENDAR: CALENDAR,
     MAX_WARN: MAX_WARN, SEASON_LABEL: SEASON_LABEL, FOOD_COST: FOOD_COST,
+    expensesFor: expensesFor, canDo: canDo, SUMMER_START: 21,
     newGame: newGame, cute: cute, cuteLabel: cuteLabel, season: season, slotsFor: slotsFor,
     actionCost: actionCost, runAction: runAction, endWeek: endWeek, kyokaiCheck: kyokaiCheck,
     checkOver: checkOver, nextWeek: nextWeek, applyChoice: applyChoice,

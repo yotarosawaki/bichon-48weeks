@@ -102,15 +102,27 @@
       var tw = openDialog(title, text);
       $('dlgNext').hidden = true;
       advance = function () { if (!tw.isDone()) tw.finish(); };
-      var box = $('dlgChoices');
+      var box = $('dlgChoices'), picked = -1, btns = [];
+      // タップミス防止：えらぶ → 「これにする」で決定。決定までは何度でも選びなおせる
+      var ok = document.createElement('button');
+      ok.type = 'button'; ok.className = 'choice confirm'; ok.id = 'choiceOk'; ok.hidden = true;
+      ok.addEventListener('click', function (e) {
+        e.stopPropagation(); if (picked < 0) return;
+        advance = null; $('dialog').hidden = true; sfx('ok'); res(picked);
+      });
       labels.forEach(function (lb, i) {
         var b = document.createElement('button');
         b.type = 'button'; b.className = 'choice'; b.id = 'choice' + i; b.textContent = '▶ ' + lb;
+        b.setAttribute('aria-pressed', 'false');
         b.addEventListener('click', function (e) {
-          e.stopPropagation(); advance = null; $('dialog').hidden = true; sfx('pick'); res(i);
+          e.stopPropagation(); picked = i; sfx('pick');
+          btns.forEach(function (x, k) { x.setAttribute('aria-pressed', String(k === i)); });
+          ok.hidden = false; ok.textContent = 'これにする：' + lb;
+          ok.focus();
         });
-        box.appendChild(b);
+        btns.push(b); box.appendChild(b);
       });
+      box.appendChild(ok);
       setTimeout(function () { var f = box.querySelector('button'); if (f) f.focus(); }, 50);
     });
   }
@@ -206,14 +218,23 @@
     var projected = projectedMoney();
     L.ACTIONS.forEach(function (a) {
       var b = $('act_' + a.id), cost = L.actionCost(S, a.id);
-      b.querySelector('.c').textContent = a.id === 'job' ? '+8,000〜11,000円' : cost ? yen(cost) + (a.id === 'salon' && cost > 10000 ? '（毛玉料金込み）' : '') : '0円';
-      b.disabled = busy || plan.length >= n || (a.id === 'salon' && plan.indexOf('salon') >= 0) || cost > projected;
+      var extra = [];
+      if (a.id === 'salon' && S.stats.mats >= 60) extra.push('毛玉料金');
+      if (a.id === 'salon' && L.season(S.week) === 'summer') extra.push('サマーカット');
+      b.querySelector('.c').textContent = a.id === 'job' ? '+8,000〜11,000円' : a.id === 'bigjob' ? '+22,000〜28,000円'
+        : cost ? yen(cost) + (extra.length ? '（' + extra.join('・') + '込み）' : '') : '0円';
+      b.disabled = busy || plan.length >= n || !L.canDo(S, a.id) || cost > projected
+        || ((a.id === 'salon' || a.id === 'bigjob') && plan.indexOf(a.id) >= 0);
     });
 
-    var cal = L.CALENDAR[S.week], need = L.FOOD_COST + (cal ? cal.cost : 0);
-    var note = '週末に ' + (cal ? cal.title + '＋' : '') + 'ごはん代 ' + yen(need) + ' がかかります。';
+    var exps = L.expensesFor(S.week), need = L.FOOD_COST, names = [];
+    exps.forEach(function (x) { need += x.cost; names.push(x.title); });
+    if (L.season(S.week) === 'summer') { need += 1000; names.push('エアコン代'); }
+    var note = '週末に ' + names.concat(['ごはん代']).join('＋') + ' ' + yen(need) + ' がかかります。';
     if (projected < need) note = '⚠ このままだと週末にお金が足りず破産します！（' + yen(need) + ' 必要）';
     if (S.sick) note = '看病中なので、今週できることは2つだけ。' + note;
+    if (S.tired) note = '高額副業の疲れで、今週は犬のお世話ができません（副業だけ）。' + note;
+    if (L.season(S.week) === 'summer') note += S.summerCutUntil >= S.week ? '（サマーカット中：第' + S.summerCutUntil + '週まで）' : S.cool ? '（保冷グッズあり）' : '（暑さ対策なし！）';
     var gn = $('goNote'); gn.textContent = note; gn.style.color = projected < need ? 'var(--bad)' : '';
     $('btnGo').disabled = busy || plan.length < n;
   }
@@ -283,7 +304,7 @@
   $('btnTitle').addEventListener('click', function () { if (!busy) { save(); titleScreen(); } });
 
   // ---------- 週の進行 ----------
-  var ACTION_ANIM = { walk: ['walk', 'park'], brush: ['brush', 'room'], play: ['play', 'room'], shampoo: ['shampoo', 'bath'], salon: ['salon', 'salon'], job: ['job', 'desk'] };
+  var ACTION_ANIM = { walk: ['walk', 'park'], brush: ['brush', 'room'], play: ['play', 'room'], shampoo: ['shampoo', 'bath'], salon: ['salon', 'salon'], job: ['job', 'desk'], bigjob: ['job', 'desk'] };
   var EVENT_ANIM = { blitz: ['blitz', 'room'], wet: ['wet', 'bath'], side: ['side', 'park'], sleep: ['sleep', 'room'], front: ['front', 'room'], happy: ['happy', 'room'], sick: ['sick', 'vet'] };
 
   $('btnGo').addEventListener('click', function () { if (!busy && plan.length === L.slotsFor(S)) runWeek(); });
@@ -295,7 +316,7 @@
       var id = actions[i];
       var r = L.runAction(S, id);
       var an = ACTION_ANIM[id]; A.setAnim(an[0], an[1]);
-      sfx(id === 'job' ? 'coin' : 'ok');
+      sfx(id === 'job' || id === 'bigjob' ? 'coin' : 'ok');
       render();
       await say(r.msg, actionLabel(id));
       for (var j = 0; j < r.events.length; j++) await runEvent(r.events[j]);
@@ -334,9 +355,18 @@
     busy = false;
     A.setAnim('idle', 'room');
     render();
-    var cal = L.CALENDAR[S.week];
-    if (cal) await say(cal.text + '\n（週末に ' + yen(cal.cost) + '）', '第' + S.week + '週 ' + cal.title);
+    await weekStartNotices();
     if (S.week === L.TOTAL_WEEKS) await say('来週はいよいよコンテスト！今週が最後の準備です。サロンに行くなら今。', 'コンテスト直前');
+  }
+
+  // 週のはじめのお知らせ（決まった出費・夏の到来・疲れ）
+  async function weekStartNotices() {
+    busy = true; renderPlan();
+    var exps = L.expensesFor(S.week);
+    for (var i = 0; i < exps.length; i++) await say(exps[i].text + '\n（週末に ' + yen(exps[i].cost) + '）', '第' + S.week + '週 ' + exps[i].title);
+    if (S.week === L.SUMMER_START) { A.setAnim('side', 'park'); await runEvent('summer'); A.setAnim('idle', 'room'); }
+    if (S.tired) { A.setAnim('sleep', 'night'); await say('高額副業の疲れで、体が動かない…。今週は犬のお世話ができず、副業しかできない。', 'ヘトヘト'); A.setAnim('idle', 'room'); }
+    busy = false; render();
   }
 
   async function runEvent(id) {
@@ -543,7 +573,9 @@
       '<li>ビションフリーゼは毛がのび続けます。月に1回はトリミングサロンへ（10,000円）。</li>' +
       '<li>ブラッシングをサボると毛玉地獄。毛玉が多いとサロンで追加料金。</li>' +
       '<li>おさんぽしないと健康が下がって病気に。ストレスがたまると「ビション・ブリッツ」で大暴走。</li>' +
-      '<li>毎週ごはん代4,000円。季節ごとにワクチンや予防薬の出費も。お金がマイナスになったら破産です。</li>' +
+      '<li>毎週ごはん代4,000円。ワクチンや、毎月のフィラリア予防薬（第8〜40週）の出費も。お金がマイナスになったら破産です。</li>' +
+      '<li>夏（第21〜34週）はモコモコの毛で熱中症の危険。保冷グッズか、サロンのサマーカット（+2,000円・6週間）で対策を。エアコン代もかかります。</li>' +
+      '<li>高額副業は22,000〜28,000円かせげるけど、翌週は疲れて犬のお世話ができません。</li>' +
       '<li>かわいさ45未満・健康25未満だとビションフリーゼ協会から警告。3つで連れていかれます。4週ごとの見回りで良い状態なら警告が1つ消えます。</li>' +
       '<li>48週目はコンテスト。かわいさ・健康・なかよし・貯金で採点。880点以上で優勝！</li>' +
       '<li>毎週はじめに自動でセーブされます。</li></ul>' +
