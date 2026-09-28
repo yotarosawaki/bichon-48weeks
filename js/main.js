@@ -259,7 +259,14 @@
   }
 
   // ---------- セーブ ----------
-  function save() { if (S && !S.over) store(SAVE_KEY, JSON.stringify(S)); }
+  // オートセーブ（毎週はじめ）＋ 手動のセーブスロット3つ。どれもこのブラウザに保存される
+  var SLOTS = [
+    { key: SAVE_KEY, label: 'オートセーブ', auto: true },
+    { key: 'bichon48.slot1', label: 'セーブ 1' },
+    { key: 'bichon48.slot2', label: 'セーブ 2' },
+    { key: 'bichon48.slot3', label: 'セーブ 3' }
+  ];
+  function save() { if (S && !S.over) writeSlot(SLOTS[0], S); }
   function validState(o) {
     if (!o || o.v !== 1 || typeof o.dogName !== 'string' || !o.stats) return false;
     if (typeof o.week !== 'number' || o.week < 1 || o.week > L.TOTAL_WEEKS) return false;
@@ -268,39 +275,61 @@
     STAT_DEF.forEach(function (d) { var v = o.stats[d.k]; if (typeof v !== 'number' || v < 0 || v > 100) ok = false; });
     return ok && typeof o.warnings === 'number' && typeof o.rng === 'number';
   }
-  function loadSave() {
-    try { var o = JSON.parse(store(SAVE_KEY)); return validState(o) ? o : null; } catch (e) { return null; }
+  function writeSlot(slot, state) { store(slot.key, JSON.stringify({ state: state, at: Date.now() })); }
+  function readSlot(slot) {
+    try {
+      var o = JSON.parse(store(slot.key));
+      if (o && o.state) return validState(o.state) ? { state: o.state, at: o.at } : null;
+      return validState(o) ? { state: o, at: 0 } : null;   // 以前の形式
+    } catch (e) { return null; }
   }
-  function checksum(s) { var h = 7; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h.toString(36); }
-  function makeCode() {
-    var json = JSON.stringify(S);
-    var b = btoa(unescape(encodeURIComponent(json)));
-    return 'B48-' + checksum(b) + '-' + b;
-  }
-  function readCode(code) {
-    var m = String(code).trim().replace(/\s+/g, '').match(/^B48-([0-9a-z]+)-(.+)$/);
-    if (!m || checksum(m[2]) !== m[1]) return null;
-    try { var o = JSON.parse(decodeURIComponent(escape(atob(m[2])))); return validState(o) ? o : null; } catch (e) { return null; }
+  function anySave() { return SLOTS.some(function (sl) { return !!readSlot(sl); }); }
+  function when(t) {
+    if (!t) return '';
+    var d = new Date(t), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  function saveSheet() {
-    save();
-    var sh = showSheet(
-      '<h2>セーブしました</h2>' +
-      '<p>第' + S.week + '週のはじめから再開できます。このブラウザの「つづきから」で遊べます。</p>' +
-      '<p>別の端末やブラウザで続けたいときは、このセーブコードをコピーしておいてください。</p>' +
-      '<textarea class="code" id="saveCode" readonly></textarea>' +
-      '<div class="suggest"><button class="btn" type="button" id="btnCopy">コードをコピー</button><button class="btn primary" type="button" id="btnBack">ゲームにもどる</button></div>');
-    var ta = sh.querySelector('#saveCode'); ta.value = makeCode();
-    sh.querySelector('#btnCopy').addEventListener('click', function () {
-      var p = navigator.clipboard && navigator.clipboard.writeText(ta.value);
-      if (p) p.then(function () { toast('コピーしました'); }, function () { ta.select(); toast('選択したのでコピーしてください'); });
-      else { ta.select(); toast('選択したのでコピーしてください'); }
+  // セーブ／ロードの画面。mode = 'save' | 'load'
+  function slotSheet(mode) {
+    var list = mode === 'save' ? SLOTS.slice(1) : SLOTS;
+    var html = '<h2>' + (mode === 'save' ? 'どこにセーブしますか？' : 'どのデータで遊びますか？') + '</h2><div class="slots">';
+    list.forEach(function (sl, i) {
+      var d = readSlot(sl), id = 'slot_' + i;
+      html += '<button class="savecard" type="button" id="' + id + '"' + (!d && mode === 'load' ? ' disabled' : '') + '>' +
+        '<span class="sc-label">' + sl.label + '</span>' +
+        (d ? '<span class="sc-name">' + esc(d.state.dogName) + '</span>' +
+             '<span class="sc-info">第' + d.state.week + '週　' + esc(yen(d.state.money)) + '　かわいさ ' + L.cute(d.state) + '</span>' +
+             '<span class="sc-time">' + when(d.at) + '</span>'
+           : '<span class="sc-empty">データなし</span>') +
+        '</button>';
     });
-    sh.querySelector('#btnBack').addEventListener('click', showPlay);
-    toast('セーブしました');
+    html += '</div><p class="caution" id="slotAsk" hidden></p>' +
+      '<div class="suggest" id="slotYesNo" hidden><button class="btn primary" type="button" id="slotYes">はい</button><button class="btn" type="button" id="slotNo">いいえ</button></div>' +
+      '<p class="note">セーブデータはこのブラウザに保存されます。</p>' +
+      '<div class="suggest"><button class="btn" type="button" id="btnBack">もどる</button></div>';
+    var sh = showSheet(html), pending = null;
+    var ask = sh.querySelector('#slotAsk'), yn = sh.querySelector('#slotYesNo');
+    function doSave(sl) {
+      writeSlot(sl, S); save(); sfx('fan');
+      toast(sl.label + ' にセーブしました'); showPlay();
+    }
+    list.forEach(function (sl, i) {
+      sh.querySelector('#slot_' + i).addEventListener('click', function () {
+        var d = readSlot(sl);
+        if (mode === 'load') { if (d) { S = d.state; save(); resume(); } return; }
+        if (!d) { doSave(sl); return; }
+        pending = sl; sfx('pick');
+        ask.hidden = false; yn.hidden = false;
+        ask.textContent = sl.label + '（' + d.state.dogName + '・第' + d.state.week + '週）に上書きしますか？';
+        sh.querySelector('#slotYes').focus();
+      });
+    });
+    sh.querySelector('#slotYes').addEventListener('click', function () { if (pending) doSave(pending); });
+    sh.querySelector('#slotNo').addEventListener('click', function () { pending = null; ask.hidden = true; yn.hidden = true; });
+    sh.querySelector('#btnBack').addEventListener('click', function () { if (mode === 'save') showPlay(); else titleScreen(); });
   }
-  $('btnSave').addEventListener('click', function () { if (S && !busy) saveSheet(); });
+  $('btnSave').addEventListener('click', function () { if (S && !busy) slotSheet('save'); });
   $('btnTitle').addEventListener('click', function () { if (!busy) { save(); titleScreen(); } });
 
   // ---------- 週の進行 ----------
@@ -532,18 +561,16 @@
     $('hud').hidden = true; $('carePanel').hidden = true; $('btnSave').hidden = true; $('btnTitle').hidden = true;
     $('dialog').hidden = true; advance = null;
     A.setAnim('none', 'cg:title');
-    var sv = loadSave();
+    var sv = anySave();
     var sh = showSheet(
       '<h2>ビションフリーゼと、48週間。</h2>' +
       '<p>毎週「お世話」か「副業」を選んで、ふわふわのまま1年間くらそう。サボるとモコモコ、お金を使いすぎると破産、かわいくないと協会に連れていかれます。</p>' +
       '<div class="menu">' +
       '<button class="btn primary" type="button" id="btnNew">はじめから</button>' +
-      (sv ? '<button class="btn" type="button" id="btnCont">つづきから（' + esc(sv.dogName) + '・第' + sv.week + '週）</button>' : '') +
-      '<button class="btn" type="button" id="btnCode">セーブコードで再開</button>' +
+      (sv ? '<button class="btn" type="button" id="btnCont">つづきから</button>' : '') +
       '<button class="btn" type="button" id="btnHow">あそびかた</button></div>');
     sh.querySelector('#btnNew').addEventListener('click', nameSheet);
-    if (sv) sh.querySelector('#btnCont').addEventListener('click', function () { S = sv; resume(); });
-    sh.querySelector('#btnCode').addEventListener('click', codeSheet);
+    if (sv) sh.querySelector('#btnCont').addEventListener('click', function () { slotSheet('load'); });
     sh.querySelector('#btnHow').addEventListener('click', howSheet);
   }
 
@@ -552,20 +579,6 @@
     A.setAnim('idle', 'room');
     showPlay();
     say('おかえりなさい。第' + S.week + '週のはじめから再開します。', S.dogName);
-  }
-
-  function codeSheet() {
-    var sh = showSheet(
-      '<h2>セーブコードで再開</h2>' +
-      '<div class="field"><label for="codeIn">セーブコード</label><textarea class="code" id="codeIn" placeholder="B48-..."></textarea></div>' +
-      '<p id="codeErr" class="caution" hidden></p>' +
-      '<div class="suggest"><button class="btn primary" type="button" id="btnLoadCode">再開する</button><button class="btn" type="button" id="btnBack">もどる</button></div>');
-    sh.querySelector('#btnLoadCode').addEventListener('click', function () {
-      var o = readCode(sh.querySelector('#codeIn').value);
-      if (!o) { var er = sh.querySelector('#codeErr'); er.hidden = false; er.textContent = 'コードが読めませんでした。最初の「B48-」から最後まで、まるごと貼り付けてください。'; return; }
-      S = o; save(); resume();
-    });
-    sh.querySelector('#btnBack').addEventListener('click', titleScreen);
   }
 
   function howSheet() {

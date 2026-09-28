@@ -180,6 +180,17 @@
   .breakdown { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; max-width: 320px; font-variant-numeric: tabular-nums; }
   .breakdown .t { border-top: 3px solid var(--line); padding-top: 4px; font-size: 20px; }
   .howto { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 62ch; }
+  .slots { display: grid; gap: 8px; max-width: 480px; }
+  .savecard { cursor: pointer; display: grid; grid-template-columns: auto 1fr; gap: 0 12px; align-items: baseline; text-align: left;
+    background: #fff; border: 3px solid var(--line); box-shadow: 0 3px 0 var(--line); padding: 8px 12px; font-variant-numeric: tabular-nums; }
+  .savecard:hover { background: #fff3f5; }
+  .savecard:active { transform: translateY(3px); box-shadow: none; }
+  .savecard[disabled] { cursor: default; opacity: .5; transform: none; box-shadow: 0 3px 0 var(--line); background: #fff; }
+  .sc-label { grid-row: span 2; font-size: 13px; color: var(--ink-soft); min-width: 6.5em; }
+  .sc-name { font-size: 18px; }
+  .sc-empty { color: var(--ink-soft); }
+  .sc-info { font-size: 13px; }
+  .sc-time { grid-column: 2; font-size: 12px; color: var(--ink-soft); }
   textarea.code { width: 100%; min-height: 84px; border: 3px solid var(--line); padding: 6px; font: 12px/1.4 ui-monospace, Consolas, monospace; word-break: break-all; }
   .toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--line); color: #fff; padding: 6px 14px; border: 2px solid #fff; z-index: 10; }
   @media (prefers-reduced-motion: reduce) { .dialog .next { animation: none; } .bar > span { transition: none; } }
@@ -240,11 +251,11 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="js/sprites.js?v=12"></script>
-<script src="js/logic.js?v=12"></script>
-<script src="js/art.js?v=12"></script>
-<script src="js/ranking-config.js?v=12"></script>
-<script src="js/ranking-firebase.js?v=12"></script>
-<script src="js/main.js?v=12"></script>
+<script src="js/sprites.js?v=13"></script>
+<script src="js/logic.js?v=13"></script>
+<script src="js/art.js?v=13"></script>
+<script src="js/ranking-config.js?v=13"></script>
+<script src="js/ranking-firebase.js?v=13"></script>
+<script src="js/main.js?v=13"></script>
 
 </html>
